@@ -1,32 +1,32 @@
 import requests
 import os
-from google.cloud import storage
+from gcp import gcs
+from dotenv import load_dotenv
 
-# Constants
-SCRYFALL_API_URL = 'https://api.scryfall.com/bulk-data'
-GCS_BUCKET_NAME = 'your-gcs-bucket-name'
-LAST_MODIFIED_FILE = 'last_modified.txt'
+# Load environment variables from .env file
+load_dotenv()
+
+# Use the variables, they are now available as environment variables
+SCRYFALL_API_URL = os.getenv('SCRAPFYLL_API_URL')
+GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME')
+LAST_MODIFIED_FILE = os.getenv('LAST_MODIFIED_FILE')
 
 def check_for_updates():
     # Fetch the last modified date from Scryfall API
     response = requests.get(SCRYFALL_API_URL)
     if response.status_code == 200:
         bulk_data = response.json()
-        for data in bulk_data['data']:
-            if data['type'] == 'your-desired-dataset-type':  # e.g., 'oracle_cards'
-                return data['updated_at']
-    return None
+    return bulk_data
 
 def download_data():
     # Your code to download and preprocess the data goes here
     pass
 
 def main():
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(GCS_BUCKET_NAME)
-
-    # Check if last_modified.txt exists in GCS and read the last modified date
-    last_modified_blob = bucket.blob(LAST_MODIFIED_FILE)
+    try:
+        gcs.download_from_gcs(GCS_BUCKET_NAME, LAST_MODIFIED_FILE, LAST_MODIFIED_FILE)
+    except Exception as e:
+        gcs.upload_to_gcs(GCS_BUCKET_NAME, , LAST_MODIFIED_FILE)
     if last_modified_blob.exists():
         last_modified_date = last_modified_blob.download_as_text()
     else:
