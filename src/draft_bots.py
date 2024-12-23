@@ -7,6 +7,7 @@ class DraftBot:
     def __init__(self, name: str):
         self.name = name
         self.picked_cards: List[CardData] = []
+        self.display_name = name
     
     def make_pick(self, pack: List[CardData]) -> Optional[CardData]:
         """Make a pick from the current pack"""

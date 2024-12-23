@@ -28,41 +28,63 @@
   - Fetches and parses cube list
   - Shows draft initialization details including color distribution
   - Creates draft session with specified parameters
+  - Added default test cube ID for easier testing in test mode
 
 ### 4. Draft Session Management
 - ✅ Implemented `Draft` class for managing draft state
   - Stores cards, players, and pack information
   - Handles pack creation and shuffling
   - Validates card count against draft requirements
+  - Tracks player pools and current pack state
+
+### 5. Pack Display System
+- ✅ Created dedicated `PackDisplay` module
+  - Handles public pack display in draft channel
+  - Shows available and picked cards
+  - Updates display after each pick
+  - Supports future Scryfall integration
+
+### 6. Card Selection
+- ✅ Implemented `/pick` command with autocomplete
+  - Suggests card names as users type
+  - Shows color category in suggestions
+  - Validates picks against current pack
+  - Updates player pools and pack state
+- ✅ Added `/viewpool` command
+  - Shows player's drafted cards
+  - Groups cards by color
+  - Displays card types and counts
 
 ## In Progress
 
-### 1. Pack Distribution
-- 🔄 Need to implement first pack distribution to players
-- ✅ Created basic pack display system
-- 🔄 Need to modify pack display for Rochester draft (public packs)
+### 1. Rochester Draft Logic
+- 🚨 **Critical Issue**: Current implementation doesn't follow Rochester draft rules
+  - Pack management needs rework
+  - Should draft all cards from current pack before opening new pack
+  - Currently maintaining fixed pack size incorrectly
+- 🔄 Need to implement proper pack rotation
+- 🔄 Need to handle empty packs correctly
 
-### 2. Draft Flow
-- 🔄 Need to implement pick system
-- ❌ Pick command not working correctly
-- 🔄 Need to handle pack passing
-- 🔄 Need to track player pools
-
-### 3. Bot Integration
+### 2. Bot Integration
 - ✅ Added support for bot players
 - ✅ Implemented random bot picking
-- 🔄 Need to test bot pick handling
+- 🔄 Need to test bot pick handling in Rochester format
 
 ## Next Steps
 
-1. Fix current issues:
-   - Fix `/pick` command functionality
-   - Make pack contents public (Rochester style)
-   - Test bot picking flow
+1. Fix Rochester draft logic:
+   - Modify pack management to draft all cards
+   - Implement proper pack completion detection
+   - Add new pack opening logic
 
-1. Implement pack display system
-   - Move pack display to public channel
-   - Handle card images from Scryfall
+2. Improve pack display:
+   - Add Scryfall image integration
+   - Enhance visual layout of pack display
+
+3. Test and verify:
+   - Complete draft flow with bots
+   - Pack passing logic
+   - Player pool tracking
 
 ## Technical Notes
 
@@ -70,34 +92,23 @@
 - Storing draft state in memory (may need persistence later)
 - Successfully integrated with Cube Cobra's CSV endpoint
 - Added detailed logging for debugging
-
-## Current Implementation State
-
-### Working Features
-- Bot initialization and command registration
-- Player signup system
-- Cube list fetching and parsing
-- Bot player generation
-- Basic pack creation
-- Pack viewing (needs to be made public)
-
-### Known Issues
-1. Pick command not functioning
-2. Packs shown privately instead of publicly (Rochester draft requirement)
-3. Bot pick handling needs testing
-4. Pack passing logic needs verification
+- Implemented modular pack display system
 
 ## Known Issues
 
-1. Command Registration
+1. Rochester Draft Logic
+   - Pack management needs complete rework
+   - Current implementation doesn't follow format rules
+
+2. Command Registration
    - Fixed duplicate command issue
    - Added proper test/production mode handling
 
 ## Next Development Session
-1. Fix `/pick` command implementation
-2. Modify pack display for Rochester draft format
-3. Test complete draft flow with bots
-4. Implement proper pack passing logic
+1. Rework Rochester draft pack management
+2. Implement proper pack completion logic
+3. Add new pack opening system
+4. Test complete draft flow with fixed logic
 
 ## Environment Setup
 
