@@ -8,6 +8,7 @@ from cube_parser import CubeCobraParser
 import argparse
 from draft_bots import DraftBot
 from draft import RochesterDraft
+from io import StringIO
 
 # Add argument parsing
 parser = argparse.ArgumentParser(description='Run the MTG Draft Discord Bot')
@@ -341,9 +342,16 @@ async def pick(interaction: discord.Interaction, card_name: str):
 
     await draft.update_pack_display()
 
+    # Check if draft is complete before handling bot turns
+    if draft.is_draft_complete():
+        # Clear draft session
+        bot.draft_sessions.pop(guild_id, None)
+        bot.active_drafts[guild_id] = []
+        return
+
     # Handle bot turns
     if draft.is_bot_turn():
-        while draft.is_bot_turn():
+        while draft.is_bot_turn() and not draft.is_draft_complete():
             current_bot = draft.get_current_player()
             current_pack = draft.get_current_pack()
             if current_pack:
@@ -353,10 +361,11 @@ async def pick(interaction: discord.Interaction, card_name: str):
                     await interaction.channel.send(f"Bot {current_bot.name} picked {bot_pick.name}")
                     await draft.update_pack_display()
     
-    # Notify next human player
-    next_player = draft.get_current_player()
-    if not draft.is_bot_turn():
-        await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
+    # Only notify next player if draft isn't complete
+    if not draft.is_draft_complete():
+        next_player = draft.get_current_player()
+        if not draft.is_bot_turn():
+            await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
 
 @bot.tree.command(
     name="viewpool",

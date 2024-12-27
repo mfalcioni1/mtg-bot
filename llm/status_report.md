@@ -9,12 +9,15 @@
 - ✅ Added `/quitdraft` command for administrators
 - ✅ Improved error handling and state validation
 - ✅ Fixed bot picking logic to work with new draft structure
+- ✅ Implemented proper "snake" draft order within packs
+- ✅ Added draft completion detection and results generation
 
 ### 2. Code Organization
 - ✅ Separated concerns between bot commands and draft logic
 - ✅ Created modular structure with dedicated files for different components
 - ✅ Improved type hints and documentation
 - ✅ Cleaned up command implementations
+- ✅ Added debug logging for draft state tracking
 
 ## Current Status
 
@@ -27,37 +30,34 @@
 - Bot player integration
 - Rochester draft core mechanics
 - Admin controls for draft management
+- Draft completion and results export
+- Proper snake draft ordering
 
 ### Known Issues
-1. Draft Completion
-   - No proper draft end detection
-   - Need to handle completion of all packs
-   - Missing draft summary/results
-
-2. Player Information
+1. Player Information
    - Need to reimplemented picked cards display
    - Could improve pool organization and display
    - Missing draft progress indicators
 
 ## Next Steps
 
-1. Draft Completion
-   - Implement draft end detection
-   - Add draft completion announcement
-   - Create draft summary generation
-   - Handle cleanup of draft resources
-
-2. Player Information System
+1. Player Information System
    - Rebuild picked cards tracking
    - Add draft progress visualization
    - Improve pool organization display
    - Add statistics and analytics
 
-3. Testing and Verification
+2. Testing and Verification
    - Test complete draft flow
    - Verify pack rotation
    - Check bot behavior
    - Validate draft completion
+
+3. Quality of Life Improvements
+   - Add more detailed draft progress indicators
+   - Improve results formatting
+   - Add draft history tracking
+   - Consider adding pack contents export
 
 ## Technical Notes
 
@@ -66,6 +66,7 @@
 - Successfully integrated with Cube Cobra's CSV endpoint
 - Improved modular architecture
 - Better state management through DraftState class
+- Added comprehensive debug logging
 
 ## Environment Setup
 

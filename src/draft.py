@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from cube_parser import CardData
 from draft_bots import DraftBot, create_bot
 from pack_display import PackDisplay, PackState
+from io import StringIO
 
 @dataclass
 class DraftState:
@@ -86,27 +87,61 @@ class RochesterDraft:
     
     def advance_draft(self):
         """Advance the draft state after a pick"""
+        print(f"\nBefore advance:")
+        print(f"Current player: {self.state.current_player}")
+        print(f"Direction: {self.state.direction}")
+        print(f"Pick number: {self.state.current_pick}")
+        
         # Increment pick number
         self.state.current_pick += 1
         
-        # Move to next player
-        self.state.current_player = (self.state.current_player + self.state.direction) % self.num_players
+        # Check if we need to reverse direction first
+        should_reverse = (self.state.current_player == 0 and self.state.direction == -1) or \
+                        (self.state.current_player == self.num_players - 1 and self.state.direction == 1)
         
-        # If we've gone through all players twice (snake draft), move to next pack
+        if should_reverse:
+            # Just reverse direction, don't advance player
+            self.state.direction *= -1
+            print(f"Direction reversed to: {self.state.direction}")
+        else:
+            # Only advance player if we're not reversing direction
+            self.state.current_player = (self.state.current_player + self.state.direction) % self.num_players
+            print(f"\nAfter player advance:")
+            print(f"New current player: {self.state.current_player}")
+        
+        # If we've gone through all players for this pack, move to next pack
         if self.state.current_pick > self.cards_per_pack:
+            print("\nMoving to next pack!")
             self.move_to_next_pack()
+        
+        print(f"\nFinal state:")
+        print(f"Player: {self.state.current_player}")
+        print(f"Direction: {self.state.direction}")
+        print(f"Pick: {self.state.current_pick}")
+        print(f"Pack: {self.state.current_pack_number}")
+        print("------------------------")
     
     def move_to_next_pack(self):
         """Move to the next pack in the draft"""
+        print("\nMoving to next pack:")
+        print(f"Current pack index: {self.state.current_pack_index}")
+        
         self.state.current_pack_index += 1
         if self.state.current_pack_index >= self.num_players:
             self.state.current_pack_index = 0
             self.state.current_pack_number += 1
+            print("Incrementing pack number")
         
-        # Reset pick counter and direction
+        # Reset pick counter and direction for new pack
         self.state.current_pick = 1
         self.state.current_player = self.state.current_pack_index
+        self.state.direction = 1  # Reset direction to clockwise for new pack
         self.picked_cards.clear()
+        
+        print(f"New pack index: {self.state.current_pack_index}")
+        print(f"New pack number: {self.state.current_pack_number}")
+        print(f"Reset player to: {self.state.current_player}")
+        print(f"Reset direction to: {self.state.direction}")
     
     async def handle_pick(self, player: Union[discord.Member, DraftBot], card_name: str) -> Optional[CardData]:
         """Handle a player making a pick"""
@@ -125,6 +160,18 @@ class RochesterDraft:
         
         # Advance draft state
         self.advance_draft()
+        
+        if self.is_draft_complete():
+            if self.draft_channel:
+                results = await self.generate_draft_results()
+                await self.draft_channel.send(
+                    "Draft complete! Here are the results:",
+                    file=discord.File(
+                        fp=StringIO(results),
+                        filename="draft_results.txt"
+                    )
+                )
+            return picked_card
         
         return picked_card
     
@@ -157,3 +204,27 @@ class RochesterDraft:
             pack_state,
             self.draft_channel.guild.id
         ) 
+    
+    def is_draft_complete(self) -> bool:
+        """Check if the draft is complete"""
+        return (self.state.current_pack_number > self.num_packs or 
+                (self.state.current_pack_number == self.num_packs and 
+                 self.state.current_pack_index >= self.num_players))
+    
+    async def generate_draft_results(self) -> str:
+        """Generate a simple text format of draft results"""
+        results = ["=== Draft Results ===\n"]
+        
+        # Process human players first
+        for player in self.active_players:
+            results.append(f"\n{player.display_name}'s Picks:")
+            for card in self.player_pools[player]:
+                results.append(f"- {card.name}")
+        
+        # Then process bots
+        for bot in self.bots:
+            results.append(f"\n{bot.name}'s Picks:")
+            for card in self.player_pools[bot]:
+                results.append(f"- {card.name}")
+        
+        return "\n".join(results) 
