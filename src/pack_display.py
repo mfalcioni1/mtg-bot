@@ -23,7 +23,7 @@ class PackDisplay:
     ) -> discord.Message:
         """Create or update the pack display message"""
         embed = discord.Embed(
-            title=f"Pack {pack_state.pack_number + 1}, Pick {pack_state.pick_number}",
+            title=f"Pack {pack_state.pack_number}, Pick {pack_state.pick_number}",
             description=f"Current player: {pack_state.current_player}",
             color=discord.Color.blue()
         )

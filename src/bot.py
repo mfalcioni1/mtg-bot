@@ -3,12 +3,11 @@ from discord.ext import commands
 from discord import app_commands
 from dotenv import load_dotenv
 import os
-from typing import Dict, List, Optional, Union
-import random
-from cube_parser import CubeCobraParser, CardData
+from typing import Dict, List
+from cube_parser import CubeCobraParser
 import argparse
-from draft_bots import DraftBot, create_bot
-from pack_display import PackDisplay, PackState
+from draft_bots import DraftBot
+from draft import RochesterDraft
 
 # Add argument parsing
 parser = argparse.ArgumentParser(description='Run the MTG Draft Discord Bot')
@@ -28,7 +27,7 @@ class DraftBot(commands.Bot):
     def __init__(self, *, test_mode: bool):
         super().__init__(command_prefix=commands.when_mentioned_or("drafty"), intents=intents)
         self.active_drafts: Dict[int, List[discord.Member]] = {}
-        self.draft_sessions: Dict[int, Draft] = {}
+        self.draft_sessions: Dict[int, RochesterDraft] = {}
         self.cube_parser = CubeCobraParser()
         self.test_mode = test_mode
     
@@ -57,131 +56,10 @@ class DraftBot(commands.Bot):
         except Exception as e:
             print(f"Failed to sync commands: {e}")
 
-class Draft:
-    def __init__(self, cards: List[CardData], num_players: int, cards_per_pack: int, num_packs: int, num_bots: int = 0):
-        self.cards = cards
-        self.num_players = num_players + num_bots
-        self.num_human_players = num_players
-        self.cards_per_pack = cards_per_pack
-        self.num_packs = num_packs
-        self.packs: List[List[CardData]] = []
-        self.current_pack = 0
-        self.current_player = 0
-        self.player_pools: Dict[Union[discord.Member, DraftBot], List[CardData]] = {}
-        self.direction = 1  # 1 for left, -1 for right
-        self.pack_number = 0  # Current pack number (0-based)
-        self.bots: List[DraftBot] = []
-        self.pack_display = PackDisplay()
-        self.picked_cards: Dict[str, CardData] = {}  # Tracks picks for current pack
-        self.draft_channel: Optional[discord.TextChannel] = None
-        self.active_players: List[discord.Member] = []
-    
-    def add_bots(self, num_bots: int):
-        """Add bot players to fill remaining seats"""
-        for i in range(num_bots):
-            bot = create_bot(name=f"Bot_{i+1}")
-            self.bots.append(bot)
-            self.player_pools[bot] = []
-    
-    def initialize_player_pools(self, players: List[discord.Member]):
-        """Initialize empty card pools for all players and bots"""
-        self.active_players = players
-        self.player_pools = {player: [] for player in players}
-        for bot in self.bots:
-            self.player_pools[bot] = []
-    
-    def is_bot_turn(self) -> bool:
-        """Check if it's currently a bot's turn"""
-        return self.current_player >= self.num_human_players
-    
-    def get_current_player(self) -> Union[discord.Member, DraftBot]:
-        """Get the current player or bot"""
-        if self.is_bot_turn():
-            return self.bots[self.current_player - self.num_human_players]
-        return self.active_players[self.current_player]
-    
-    async def handle_bot_picks(self) -> Optional[CardData]:
-        """Handle picks for bot players"""
-        if not self.is_bot_turn():
-            return None
-            
-        current_bot = self.get_current_player()
-        current_pack = self.get_current_pack()
-        
-        if not current_pack:
-            return None
-            
-        picked_card = current_bot.make_pick(current_pack)
-        if picked_card:
-            current_pack.remove(picked_card)
-            self.player_pools[current_bot].append(picked_card)
-            self.current_player = (self.current_player + self.direction) % self.num_players
-            
-            # Check if we need to move to next pack
-            if (self.direction == 1 and self.current_player == 0) or \
-               (self.direction == -1 and self.current_player == self.num_players - 1):
-                self.pack_number += 1
-                if self.pack_number % self.num_players == 0:
-                    self.direction *= -1
-                    
-        return picked_card
-    
-    def prepare_packs(self):
-        """Shuffle cards and create packs"""
-        random.shuffle(self.cards)
-        cards_needed = self.num_players * self.num_packs * self.cards_per_pack
-        if len(self.cards) < cards_needed:
-            raise ValueError(f"Not enough cards in cube. Need {cards_needed} but only have {len(self.cards)}")
-        
-        # Create packs
-        for i in range(self.num_packs * self.num_players):
-            pack = self.cards[i * self.cards_per_pack:(i + 1) * self.cards_per_pack]
-            self.packs.append(pack)
-    
-    def get_current_pack(self) -> Optional[List[CardData]]:
-        """Get the current pack for the current player"""
-        if not self.packs:
-            return None
-        pack_index = self.current_player + (self.pack_number * self.num_players)
-        return self.packs[pack_index] if pack_index < len(self.packs) else None
-    
-    def get_card_names(self) -> List[str]:
-        """Get list of all card names in the cube"""
-        return [card.name for card in self.cards]
-    
-    async def set_draft_channel(self, channel: discord.TextChannel):
-        """Set the channel where pack displays will be shown"""
-        self.draft_channel = channel
-    
-    async def update_pack_display(self):
-        """Update the public pack display"""
-        if not self.draft_channel:
-            return
-
-        current_pack = self.get_current_pack()
-        if not current_pack:
-            return
-
-        current_player = self.get_current_player()
-        player_name = current_player.name if isinstance(current_player, DraftBot) else current_player.display_name
-
-        pack_state = PackState(
-            available_cards=current_pack,
-            picked_cards=self.picked_cards,
-            pack_number=self.pack_number,
-            pick_number=self.cards_per_pack - len(current_pack) + 1,
-            current_player=player_name
-        )
-
-        await self.pack_display.create_or_update_pack_display(
-            self.draft_channel,
-            pack_state,
-            self.draft_channel.guild.id
-        )
-
 # Initialize bot with test mode flag
 bot = DraftBot(test_mode=args.test)
 
+# Move all command and event decorators after bot initialization
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
@@ -301,7 +179,7 @@ async def startdraft(
             return
         
         # Create draft session
-        draft = Draft(cards, num_human_players, cards_per_pack, num_packs, num_bots)
+        draft = RochesterDraft(cards, num_human_players, cards_per_pack, num_packs, num_bots)
         draft.add_bots(num_bots)
         
         try:
@@ -340,12 +218,17 @@ async def startdraft(
         # If first player is a bot, start bot picking
         if draft.is_bot_turn():
             while draft.is_bot_turn():
-                picked_card = await draft.handle_bot_picks()
-                if picked_card:
-                    await interaction.channel.send(f"Bot {draft.get_current_player().name} picked {picked_card.name}")
+                current_bot = draft.get_current_player()
+                current_pack = draft.get_current_pack()
+                if current_pack:
+                    picked_card = current_bot.make_pick(current_pack)
+                    if picked_card:
+                        await draft.handle_pick(current_bot, picked_card.name)
+                        await interaction.channel.send(f"Bot {current_bot.name} picked {picked_card.name}")
+                        await draft.update_pack_display()
             
             # Notify first human player
-            next_player = bot.active_drafts[guild_id][draft.current_player]
+            next_player = draft.get_current_player()
             await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
         
         await draft.set_draft_channel(interaction.channel)
@@ -371,8 +254,8 @@ async def show_pack(interaction: discord.Interaction):
     
     draft = bot.draft_sessions[guild_id]
     
-    # Check if it's the player's turn
-    if interaction.user != bot.active_drafts[guild_id][draft.current_player]:
+    # Check if it's the player's turn using get_current_player()
+    if interaction.user != draft.get_current_player():
         await interaction.response.send_message("It's not your turn to pick!", ephemeral=True)
         return
     
@@ -388,7 +271,7 @@ async def show_pack(interaction: discord.Interaction):
     ])
     
     embed = discord.Embed(
-        title=f"Pack {draft.pack_number + 1}, Pick {draft.cards_per_pack - len(current_pack) + 1}",
+        title=f"Pack {draft.state.current_pack_number}, Pick {draft.state.current_pick}",
         description=f"Your current pack:\n{pack_contents}",
         color=discord.Color.blue()
     )
@@ -406,7 +289,8 @@ async def pick_autocomplete(interaction: discord.Interaction, current: str) -> L
     draft = bot.draft_sessions[guild_id]
     current_pack = draft.get_current_pack()
     
-    if not current_pack or interaction.user != bot.active_drafts[guild_id][draft.current_player]:
+    # Check if it's the player's turn using the new method
+    if not current_pack or interaction.user != draft.get_current_player():
         return []
     
     # Filter cards that match the current input (case-insensitive)
@@ -436,10 +320,13 @@ async def pick(interaction: discord.Interaction, card_name: str):
         return
     
     draft = bot.draft_sessions[guild_id]
-    current_pack = draft.get_current_pack()
     
-    # Find the card in the current pack
-    picked_card = next((card for card in current_pack if card.name.lower() == card_name.lower()), None)
+    # Check if it's the player's turn
+    if interaction.user != draft.get_current_player():
+        await interaction.response.send_message("It's not your turn to pick!", ephemeral=True)
+        return
+    
+    picked_card = await draft.handle_pick(interaction.user, card_name)
     if not picked_card:
         await interaction.response.send_message(
             f"Couldn't find card '{card_name}' in the current pack!",
@@ -447,33 +334,29 @@ async def pick(interaction: discord.Interaction, card_name: str):
         )
         return
 
-    # Add to player's pool and record pick
-    draft.player_pools[interaction.user].append(picked_card)
-    current_pack.remove(picked_card)
-    draft.picked_cards[interaction.user.display_name] = picked_card
-
-    # Update the display
-    await draft.update_pack_display()
-
-    # Move to next player
-    draft.current_player = (draft.current_player + draft.direction) % draft.num_players
-
     await interaction.response.send_message(
         f"You picked {picked_card.name}!",
         ephemeral=True
     )
 
-    # Handle next player notification
+    await draft.update_pack_display()
+
+    # Handle bot turns
     if draft.is_bot_turn():
         while draft.is_bot_turn():
-            picked_card = await draft.handle_bot_picks()
-            if picked_card:
-                draft.picked_cards[draft.get_current_player().name] = picked_card
-                await draft.update_pack_display()
+            current_bot = draft.get_current_player()
+            current_pack = draft.get_current_pack()
+            if current_pack:
+                bot_pick = current_bot.make_pick(current_pack)
+                if bot_pick:
+                    await draft.handle_pick(current_bot, bot_pick.name)
+                    await interaction.channel.send(f"Bot {current_bot.name} picked {bot_pick.name}")
+                    await draft.update_pack_display()
     
     # Notify next human player
-    next_player = bot.active_drafts[guild_id][draft.current_player]
-    await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
+    next_player = draft.get_current_player()
+    if not draft.is_bot_turn():
+        await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
 
 @bot.tree.command(
     name="viewpool",
@@ -543,6 +426,52 @@ async def viewpool(
             )
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(
+    name="quitdraft",
+    description="Quit the current draft and reset everything (Admin only)"
+)
+async def quitdraft(interaction: discord.Interaction):
+    """Quit the current draft and reset all states"""
+    # Check if user has admin permissions
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "You need administrator permissions to use this command!", 
+            ephemeral=True
+        )
+        return
+    
+    guild_id = interaction.guild_id
+    
+    # Check if there's an active draft
+    if guild_id not in bot.draft_sessions:
+        await interaction.response.send_message(
+            "There's no active draft to quit!", 
+            ephemeral=True
+        )
+        return
+    
+    try:
+        # Clear the pack display
+        draft = bot.draft_sessions[guild_id]
+        await draft.pack_display.clear_display(guild_id)
+        
+        # Clear all states
+        bot.active_drafts[guild_id] = []
+        bot.draft_sessions.pop(guild_id, None)
+        
+        await interaction.response.send_message(
+            "Draft has been terminated. All states have been reset.\n"
+            "Use `/signup` to start a new draft!",
+            ephemeral=False
+        )
+        
+    except Exception as e:
+        print(f"Error in quitdraft: {e}")
+        await interaction.response.send_message(
+            "An error occurred while trying to quit the draft. Please try again.",
+            ephemeral=True
+        )
 
 # Run the bot
 if __name__ == "__main__":
