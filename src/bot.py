@@ -8,7 +8,10 @@ from cube_parser import CubeCobraParser
 import argparse
 from draft_bots import DraftBot
 from draft import RochesterDraft
-from io import StringIO
+import asyncio
+from aiohttp import web
+import logging
+import signal
 
 # Add argument parsing
 parser = argparse.ArgumentParser(description='Run the MTG Draft Discord Bot')
@@ -31,27 +34,87 @@ class DraftBot(commands.Bot):
         self.draft_sessions: Dict[int, RochesterDraft] = {}
         self.cube_parser = CubeCobraParser()
         self.test_mode = test_mode
-    
+        
+        # Register commands immediately
+        self.setup_commands()
+        
+    def setup_commands(self):
+        """Register all commands"""
+        @self.tree.command(name="signup", description="Sign up for the current draft")
+        async def signup(interaction: discord.Interaction):
+            await self._handle_signup(interaction)
+            
+        @self.tree.command(name="clear_signup", description="Clear all signups for the current draft (Admin only)")
+        async def clear_signup(interaction: discord.Interaction):
+            await self._handle_clear_signup(interaction)
+            
+        # Move all other commands here...
+        
+    async def _handle_signup(self, interaction: discord.Interaction):
+        """Handle signup command logic"""
+        guild_id = interaction.guild_id
+        
+        if guild_id not in self.active_drafts:
+            self.active_drafts[guild_id] = []
+        
+        if interaction.user in self.active_drafts[guild_id]:
+            await interaction.response.send_message("You're already signed up for the draft!", ephemeral=True)
+            return
+        
+        self.active_drafts[guild_id].append(interaction.user)
+        
+        participant_list = "\n".join([f"{idx + 1}. {player.display_name}" 
+                                    for idx, player in enumerate(self.active_drafts[guild_id])])
+        
+        embed = discord.Embed(
+            title="Draft Signup",
+            description=f"{interaction.user.display_name} has signed up for the draft!\n\n**Current Participants:**\n{participant_list}",
+            color=discord.Color.green()
+        )
+        
+        await interaction.response.send_message(embed=embed)
+
+    async def _handle_clear_signup(self, interaction: discord.Interaction):
+        """Handle clear signup command logic"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("You need administrator permissions to use this command!", ephemeral=True)
+            return
+        
+        guild_id = interaction.guild_id
+        self.active_drafts[guild_id] = []
+        await interaction.response.send_message("Draft signups have been cleared!", ephemeral=True)
+
     async def setup_hook(self):
         print(f"Running in {'TEST' if self.test_mode else 'PRODUCTION'} mode")
+
+    async def on_ready(self):
+        print(f"Logged in as {self.user} (ID: {self.user.id})")
+        print("------")
+        
+        # Clean up and sync commands after bot is ready
         print("Syncing commands...")
         try:
             if self.test_mode:
-                # Clear all global commands first
+                # First, remove all global commands
                 await self.tree.sync()
-                # Then sync to test guild
+                await self.tree.clear_commands(guild=None)
+                
+                # Then set up test guild commands
                 test_guild = discord.Object(id=int(os.getenv('TEST_GUILD_ID')))
-                # Clear existing guild commands
                 self.tree.clear_commands(guild=test_guild)
-                # Copy and sync new commands
                 self.tree.copy_global_to(guild=test_guild)
                 synced = await self.tree.sync(guild=test_guild)
                 print(f"Test guild commands synced! Synced {len(synced)} commands")
             else:
-                # Clear existing commands first
-                self.tree.clear_commands()
-                synced = await self.tree.sync()
-                print(f"Global commands synced! Synced {len(synced)} commands")
+                # For production, clean up any test guild commands first
+                if os.getenv('TEST_GUILD_ID'):
+                    test_guild = discord.Object(id=int(os.getenv('TEST_GUILD_ID')))
+                    self.tree.clear_commands(guild=test_guild)
+                    await self.tree.sync(guild=test_guild)
+                
+                # Then set up global commands
+                await self.tree.sync()
+                print(f"Global commands synced! Synced {len(self.tree.get_commands())} commands")
             
             print(f"Available commands: {[cmd.name for cmd in self.tree.get_commands()]}")
         except Exception as e:
@@ -60,50 +123,130 @@ class DraftBot(commands.Bot):
 # Initialize bot with test mode flag
 bot = DraftBot(test_mode=args.test)
 
-# Move all command and event decorators after bot initialization
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    print("------")
-
-@bot.tree.command(name="signup", description="Sign up for the current draft")
-async def signup(interaction: discord.Interaction):
+# First define the autocomplete function
+async def pick_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+    """Provide autocomplete suggestions for card names in the current pack"""
     guild_id = interaction.guild_id
     
-    # Initialize the draft list for this guild if it doesn't exist
-    if guild_id not in bot.active_drafts:
-        bot.active_drafts[guild_id] = []
+    if guild_id not in bot.draft_sessions:
+        return []
     
-    # Check if the user is already signed up
-    if interaction.user in bot.active_drafts[guild_id]:
-        await interaction.response.send_message("You're already signed up for the draft!", ephemeral=True)
+    draft = bot.draft_sessions[guild_id]
+    current_pack = draft.get_current_pack()
+    
+    # Check if it's the player's turn using the new method
+    if not current_pack or interaction.user != draft.get_current_player():
+        return []
+    
+    # Filter cards that match the current input (case-insensitive)
+    matches = []
+    current_lower = current.lower()
+    for card in current_pack:
+        if current_lower in card.name.lower():
+            matches.append(app_commands.Choice(
+                name=f"{card.name} ({card.color_category.upper()})",
+                value=card.name
+            ))
+    
+    # Discord has a limit of 25 choices
+    return matches[:25]
+
+# Then define the pick command with autocomplete
+@bot.tree.command(name="pick", description="Pick a card from your current pack")
+@app_commands.describe(
+    card_name="Start typing a card name to see available options"
+)
+@app_commands.autocomplete(card_name=pick_autocomplete)
+async def pick(interaction: discord.Interaction, card_name: str):
+    guild_id = interaction.guild_id
+    
+    if guild_id not in bot.draft_sessions:
+        await interaction.response.send_message("There's no active draft in this server!", ephemeral=True)
         return
     
-    # Add the user to the draft
-    bot.active_drafts[guild_id].append(interaction.user)
+    draft = bot.draft_sessions[guild_id]
     
-    # Create response message
-    participant_list = "\n".join([f"{idx + 1}. {player.display_name}" 
-                                for idx, player in enumerate(bot.active_drafts[guild_id])])
+    # Check if it's the player's turn
+    if interaction.user != draft.get_current_player():
+        await interaction.response.send_message("It's not your turn to pick!", ephemeral=True)
+        return
+    
+    picked_card = await draft.handle_pick(interaction.user, card_name)
+    if not picked_card:
+        await interaction.response.send_message(
+            f"Couldn't find card '{card_name}' in the current pack!",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(
+        f"You picked {picked_card.name}!",
+        ephemeral=True
+    )
+
+    await draft.update_pack_display()
+
+    # Check if draft is complete before handling bot turns
+    if draft.is_draft_complete():
+        # Clear draft session
+        bot.draft_sessions.pop(guild_id, None)
+        bot.active_drafts[guild_id] = []
+        return
+
+    # Handle bot turns
+    if draft.is_bot_turn():
+        while draft.is_bot_turn() and not draft.is_draft_complete():
+            current_bot = draft.get_current_player()
+            current_pack = draft.get_current_pack()
+            if current_pack:
+                bot_pick = current_bot.make_pick(current_pack)
+                if bot_pick:
+                    await draft.handle_pick(current_bot, bot_pick.name)
+                    await interaction.channel.send(f"Bot {current_bot.name} picked {bot_pick.name}")
+                    await draft.update_pack_display()
+    
+    # Only notify next player if draft isn't complete
+    if not draft.is_draft_complete():
+        next_player = draft.get_current_player()
+        if not draft.is_bot_turn():
+            await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
+
+@bot.tree.command(
+    name="show_pack",
+    description="Show your current pack"
+)
+async def show_pack(interaction: discord.Interaction):
+    guild_id = interaction.guild_id
+    
+    if guild_id not in bot.draft_sessions:
+        await interaction.response.send_message("There's no active draft in this server!", ephemeral=True)
+        return
+    
+    draft = bot.draft_sessions[guild_id]
+    
+    # Check if it's the player's turn using get_current_player()
+    if interaction.user != draft.get_current_player():
+        await interaction.response.send_message("It's not your turn to pick!", ephemeral=True)
+        return
+    
+    current_pack = draft.get_current_pack()
+    if not current_pack:
+        await interaction.response.send_message("No active pack to display!", ephemeral=True)
+        return
+    
+    # Create pack display
+    pack_contents = "\n".join([
+        f"{idx + 1}. {card.name} ({card.type}) - {card.color_category.upper()}"
+        for idx, card in enumerate(current_pack)
+    ])
     
     embed = discord.Embed(
-        title="Draft Signup",
-        description=f"{interaction.user.display_name} has signed up for the draft!\n\n**Current Participants:**\n{participant_list}",
-        color=discord.Color.green()
+        title=f"Pack {draft.state.current_pack_number}, Pick {draft.state.current_pick}",
+        description=f"Your current pack:\n{pack_contents}",
+        color=discord.Color.blue()
     )
     
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="clear_signup", description="Clear all signups for the current draft (Admin only)")
-async def clear_signup(interaction: discord.Interaction):
-    # Check if user has admin permissions
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("You need administrator permissions to use this command!", ephemeral=True)
-        return
-    
-    guild_id = interaction.guild_id
-    bot.active_drafts[guild_id] = []
-    await interaction.response.send_message("Draft signups have been cleared!", ephemeral=True)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(
     name="startdraft",
@@ -243,131 +386,6 @@ async def startdraft(
         )
 
 @bot.tree.command(
-    name="show_pack",
-    description="Show your current pack"
-)
-async def show_pack(interaction: discord.Interaction):
-    guild_id = interaction.guild_id
-    
-    if guild_id not in bot.draft_sessions:
-        await interaction.response.send_message("There's no active draft in this server!", ephemeral=True)
-        return
-    
-    draft = bot.draft_sessions[guild_id]
-    
-    # Check if it's the player's turn using get_current_player()
-    if interaction.user != draft.get_current_player():
-        await interaction.response.send_message("It's not your turn to pick!", ephemeral=True)
-        return
-    
-    current_pack = draft.get_current_pack()
-    if not current_pack:
-        await interaction.response.send_message("No active pack to display!", ephemeral=True)
-        return
-    
-    # Create pack display
-    pack_contents = "\n".join([
-        f"{idx + 1}. {card.name} ({card.type}) - {card.color_category.upper()}"
-        for idx, card in enumerate(current_pack)
-    ])
-    
-    embed = discord.Embed(
-        title=f"Pack {draft.state.current_pack_number}, Pick {draft.state.current_pick}",
-        description=f"Your current pack:\n{pack_contents}",
-        color=discord.Color.blue()
-    )
-    
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# First define the autocomplete function
-async def pick_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-    """Provide autocomplete suggestions for card names in the current pack"""
-    guild_id = interaction.guild_id
-    
-    if guild_id not in bot.draft_sessions:
-        return []
-    
-    draft = bot.draft_sessions[guild_id]
-    current_pack = draft.get_current_pack()
-    
-    # Check if it's the player's turn using the new method
-    if not current_pack or interaction.user != draft.get_current_player():
-        return []
-    
-    # Filter cards that match the current input (case-insensitive)
-    matches = []
-    current_lower = current.lower()
-    for card in current_pack:
-        if current_lower in card.name.lower():
-            matches.append(app_commands.Choice(
-                name=f"{card.name} ({card.color_category.upper()})",
-                value=card.name
-            ))
-    
-    # Discord has a limit of 25 choices
-    return matches[:25]
-
-# Then define the pick command with autocomplete
-@bot.tree.command(name="pick", description="Pick a card from your current pack")
-@app_commands.describe(
-    card_name="Start typing a card name to see available options"
-)
-@app_commands.autocomplete(card_name=pick_autocomplete)
-async def pick(interaction: discord.Interaction, card_name: str):
-    guild_id = interaction.guild_id
-    
-    if guild_id not in bot.draft_sessions:
-        await interaction.response.send_message("There's no active draft in this server!", ephemeral=True)
-        return
-    
-    draft = bot.draft_sessions[guild_id]
-    
-    # Check if it's the player's turn
-    if interaction.user != draft.get_current_player():
-        await interaction.response.send_message("It's not your turn to pick!", ephemeral=True)
-        return
-    
-    picked_card = await draft.handle_pick(interaction.user, card_name)
-    if not picked_card:
-        await interaction.response.send_message(
-            f"Couldn't find card '{card_name}' in the current pack!",
-            ephemeral=True
-        )
-        return
-
-    await interaction.response.send_message(
-        f"You picked {picked_card.name}!",
-        ephemeral=True
-    )
-
-    await draft.update_pack_display()
-
-    # Check if draft is complete before handling bot turns
-    if draft.is_draft_complete():
-        # Clear draft session
-        bot.draft_sessions.pop(guild_id, None)
-        bot.active_drafts[guild_id] = []
-        return
-
-    # Handle bot turns
-    if draft.is_bot_turn():
-        while draft.is_bot_turn() and not draft.is_draft_complete():
-            current_bot = draft.get_current_player()
-            current_pack = draft.get_current_pack()
-            if current_pack:
-                bot_pick = current_bot.make_pick(current_pack)
-                if bot_pick:
-                    await draft.handle_pick(current_bot, bot_pick.name)
-                    await interaction.channel.send(f"Bot {current_bot.name} picked {bot_pick.name}")
-                    await draft.update_pack_display()
-    
-    # Only notify next player if draft isn't complete
-    if not draft.is_draft_complete():
-        next_player = draft.get_current_player()
-        if not draft.is_bot_turn():
-            await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
-
-@bot.tree.command(
     name="viewpool",
     description="View a player's drafted cards"
 )
@@ -482,6 +500,24 @@ async def quitdraft(interaction: discord.Interaction):
             ephemeral=True
         )
 
+def handle_sigterm(*args):
+    """Handle termination signal"""
+    logging.info("Received termination signal")
+    asyncio.create_task(bot.close())
+
 # Run the bot
 if __name__ == "__main__":
-    bot.run(os.getenv('DISCORD_BOT_TOKEN'))
+    logging.basicConfig(level=logging.INFO)
+    
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    signal.signal(signal.SIGINT, handle_sigterm)
+    
+    try:
+        # Run the bot
+        bot.run(os.getenv('DISCORD_BOT_TOKEN'), log_handler=None)
+    except Exception as e:
+        logging.error(f"Bot crashed: {e}")
+        # Ensure cleanup
+        if not bot.is_closed():
+            asyncio.run(bot.close())

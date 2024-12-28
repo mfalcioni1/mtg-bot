@@ -3,7 +3,6 @@ from typing import List, Optional, Dict
 import re
 import csv
 from io import StringIO
-import ssl
 
 class CardData:
     def __init__(self, row: Dict[str, str]):
