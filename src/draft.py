@@ -106,6 +106,9 @@ class RochesterDraft:
     
     def move_to_next_pack(self):
         """Move to the next pack in the draft"""
+        # Clear the picked cards before moving to next pack
+        self.picked_cards = {}
+        
         self.state.current_pack_index = (self.state.current_pack_index + 1) % self.num_players
         
         if self.state.current_pack_index == 0:
@@ -116,9 +119,6 @@ class RochesterDraft:
         
         # First player of new pack is determined by current_pack_index
         self.state.current_player = self.state.current_pack_index
-        
-        # Clear the picked cards for the new pack
-        self.picked_cards = {}
     
     async def handle_pick(self, player: Union[discord.Member, DraftBot], card_name: str) -> Optional[CardData]:
         """Handle a player making a pick"""
@@ -139,6 +139,9 @@ class RochesterDraft:
         if player_name not in self.picked_cards:
             self.picked_cards[player_name] = []
         self.picked_cards[player_name].append(picked_card)
+        
+        # Update the display before advancing the draft state
+        await self.update_pack_display()
         
         # Advance draft state
         self.advance_draft()
@@ -173,7 +176,7 @@ class RochesterDraft:
         current_player = self.get_current_player()
         player_name = current_player.name if isinstance(current_player, DraftBot) else current_player.display_name
         
-        # Get pack opener (player who goes first in this pack)
+        # Get pack opener
         pack_opener = self.active_players[self.state.current_pack_index].display_name \
             if self.state.current_pack_index < self.num_human_players \
             else self.bots[self.state.current_pack_index - self.num_human_players].name
@@ -183,10 +186,13 @@ class RochesterDraft:
         if player_pack_number == 0:
             player_pack_number = self.num_players
 
+        # Calculate unique pack ID based on both pack number and pack index
+        unique_pack_id = (self.state.current_pack_number - 1) * self.num_players + self.state.current_pack_index + 1
+
         pack_state = PackState(
             available_cards=current_pack,
             picked_cards=self.picked_cards,
-            pack_number=self.state.current_pack_number,
+            pack_number=unique_pack_id,  # Use unique pack ID here
             pack_opener=pack_opener,
             current_player=player_name,
             player_pack_number=player_pack_number
