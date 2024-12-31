@@ -87,66 +87,38 @@ class RochesterDraft:
     
     def advance_draft(self):
         """Advance the draft state after a pick"""
-        print(f"\nBefore advance:")
-        print(f"Current player: {self.state.current_player}")
-        print(f"Direction: {self.state.direction}")
-        print(f"Pick number: {self.state.current_pick}")
-        
         # Increment pick number
         self.state.current_pick += 1
         
-        # Check if we need to reverse direction first
-        should_reverse = (self.state.current_player == 0 and self.state.direction == -1) or \
-                        (self.state.current_player == self.num_players - 1 and self.state.direction == 1)
-        
-        if should_reverse:
-            # Just reverse direction, don't advance player
-            self.state.direction *= -1
-            print(f"Direction reversed to: {self.state.direction}")
-        else:
-            # Only advance player if we're not reversing direction
-            self.state.current_player = (self.state.current_player + self.state.direction) % self.num_players
-            print(f"\nAfter player advance:")
-            print(f"New current player: {self.state.current_player}")
-        
-        # If we've gone through all players for this pack, move to next pack
+        # If we've completed a pack
         if self.state.current_pick > self.cards_per_pack:
-            print("\nMoving to next pack!")
             self.move_to_next_pack()
+            return
         
-        print(f"\nFinal state:")
-        print(f"Player: {self.state.current_player}")
-        print(f"Direction: {self.state.direction}")
-        print(f"Pick: {self.state.current_pick}")
-        print(f"Pack: {self.state.current_pack_number}")
-        print("------------------------")
+        # Within a pack, snake back and forth
+        if self.state.current_pick <= self.cards_per_pack // 2:
+            # First half of pack - go forward
+            self.state.current_player = (self.state.current_pack_index + self.state.current_pick - 1) % self.num_players
+        else:
+            # Second half of pack - go backward
+            reverse_pick = self.cards_per_pack - self.state.current_pick + 1
+            self.state.current_player = (self.state.current_pack_index + reverse_pick - 1) % self.num_players
     
     def move_to_next_pack(self):
         """Move to the next pack in the draft"""
-        print("\nMoving to next pack:")
-        print(f"Current pack index: {self.state.current_pack_index}")
+        self.state.current_pack_index = (self.state.current_pack_index + 1) % self.num_players
         
-        self.state.current_pack_index += 1
-        if self.state.current_pack_index >= self.num_players:
-            self.state.current_pack_index = 0
+        if self.state.current_pack_index == 0:
             self.state.current_pack_number += 1
-            print("Incrementing pack number")
         
-        # Reset pick counter and direction for new pack
+        # Reset pick counter for new pack
         self.state.current_pick = 1
-        self.state.direction = 1  # Reset direction to clockwise for new pack
         
-        # Rotate player order - the player who opened the previous pack becomes last
-        # The current_pack_index determines who opens (goes first) in the new pack
+        # First player of new pack is determined by current_pack_index
         self.state.current_player = self.state.current_pack_index
         
         # Clear the picked cards for the new pack
         self.picked_cards = {}
-        
-        print(f"New pack index: {self.state.current_pack_index}")
-        print(f"New pack number: {self.state.current_pack_number}")
-        print(f"Reset player to: {self.state.current_player}")
-        print(f"Reset direction to: {self.state.direction}")
     
     async def handle_pick(self, player: Union[discord.Member, DraftBot], card_name: str) -> Optional[CardData]:
         """Handle a player making a pick"""

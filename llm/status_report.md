@@ -26,6 +26,9 @@
 - ✅ Fixed bot picking logic to work with new draft structure
 - ✅ Implemented proper "snake" draft order within packs
 - ✅ Added draft completion detection and results generation
+- ✅ Fixed Rochester draft pick order logic to match specifications
+- ✅ Implemented correct pack rotation between rounds
+- ✅ Corrected player order progression within packs
 
 ### 4. Code Organization
 - ✅ Separated concerns between bot commands and draft logic
@@ -68,12 +71,19 @@
 - Pack-specific message tracking
 - Improved pack information display
 - Proper command registration order
+- Correct Rochester draft pick sequencing
+- Pack-to-pack rotation handling
+- Player order management
 
 ### Known Issues
 1. Player Information
    - ✅ Completed
    - Could improve pool organization and display
    - Missing draft progress indicators
+2. Draft Logic
+   - ✅ Fixed Rochester draft pick order
+   - ✅ Corrected pack rotation
+   - ✅ Implemented proper snake draft pattern
 
 ## Next Steps
 
@@ -84,8 +94,8 @@
    - Add statistics and analytics
 
 2. Testing and Verification
+   - ✅ Verified Rochester draft logic
    - Test complete draft flow
-   - Verify pack rotation
    - Check bot behavior
    - Validate draft completion
 
