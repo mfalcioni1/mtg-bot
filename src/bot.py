@@ -26,104 +26,7 @@ intents.message_content = True
 # Load environment variables from .env file
 load_dotenv()
 
-# Create a bot instance
-class DraftBot(commands.Bot):
-    def __init__(self, *, test_mode: bool):
-        super().__init__(command_prefix=commands.when_mentioned_or("drafty"), intents=intents)
-        self.active_drafts: Dict[int, List[discord.Member]] = {}
-        self.draft_sessions: Dict[int, RochesterDraft] = {}
-        self.cube_parser = CubeCobraParser()
-        self.test_mode = test_mode
-        
-        # Register commands immediately
-        self.setup_commands()
-        
-    def setup_commands(self):
-        """Register all commands"""
-        @self.tree.command(name="signup", description="Sign up for the current draft")
-        async def signup(interaction: discord.Interaction):
-            await self._handle_signup(interaction)
-            
-        @self.tree.command(name="clear_signup", description="Clear all signups for the current draft (Admin only)")
-        async def clear_signup(interaction: discord.Interaction):
-            await self._handle_clear_signup(interaction)
-            
-        # Move all other commands here...
-        
-    async def _handle_signup(self, interaction: discord.Interaction):
-        """Handle signup command logic"""
-        guild_id = interaction.guild_id
-        
-        if guild_id not in self.active_drafts:
-            self.active_drafts[guild_id] = []
-        
-        if interaction.user in self.active_drafts[guild_id]:
-            await interaction.response.send_message("You're already signed up for the draft!", ephemeral=True)
-            return
-        
-        self.active_drafts[guild_id].append(interaction.user)
-        
-        participant_list = "\n".join([f"{idx + 1}. {player.display_name}" 
-                                    for idx, player in enumerate(self.active_drafts[guild_id])])
-        
-        embed = discord.Embed(
-            title="Draft Signup",
-            description=f"{interaction.user.display_name} has signed up for the draft!\n\n**Current Participants:**\n{participant_list}",
-            color=discord.Color.green()
-        )
-        
-        await interaction.response.send_message(embed=embed)
-
-    async def _handle_clear_signup(self, interaction: discord.Interaction):
-        """Handle clear signup command logic"""
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("You need administrator permissions to use this command!", ephemeral=True)
-            return
-        
-        guild_id = interaction.guild_id
-        self.active_drafts[guild_id] = []
-        await interaction.response.send_message("Draft signups have been cleared!", ephemeral=True)
-
-    async def setup_hook(self):
-        print(f"Running in {'TEST' if self.test_mode else 'PRODUCTION'} mode")
-
-    async def on_ready(self):
-        print(f"Logged in as {self.user} (ID: {self.user.id})")
-        print("------")
-        
-        # Clean up and sync commands after bot is ready
-        print("Syncing commands...")
-        try:
-            if self.test_mode:
-                # First, remove all global commands
-                await self.tree.sync()
-                await self.tree.clear_commands(guild=None)
-                
-                # Then set up test guild commands
-                test_guild = discord.Object(id=int(os.getenv('TEST_GUILD_ID')))
-                self.tree.clear_commands(guild=test_guild)
-                self.tree.copy_global_to(guild=test_guild)
-                synced = await self.tree.sync(guild=test_guild)
-                print(f"Test guild commands synced! Synced {len(synced)} commands")
-            else:
-                # For production, clean up any test guild commands first
-                if os.getenv('TEST_GUILD_ID'):
-                    test_guild = discord.Object(id=int(os.getenv('TEST_GUILD_ID')))
-                    self.tree.clear_commands(guild=test_guild)
-                    await self.tree.sync(guild=test_guild)
-                
-                # Then set up global commands
-                await self.tree.sync()
-                print(f"Global commands synced! Synced {len(self.tree.get_commands())} commands")
-            
-            print(f"Available commands: {[cmd.name for cmd in self.tree.get_commands()]}")
-        except Exception as e:
-            print(f"Failed to sync commands: {e}")
-
-# Initialize bot with test mode flag
-bot = DraftBot(test_mode=args.test)
-
-# First define the autocomplete function
+# Move this before any commands
 async def pick_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
     """Provide autocomplete suggestions for card names in the current pack"""
     guild_id = interaction.guild_id
@@ -151,11 +54,41 @@ async def pick_autocomplete(interaction: discord.Interaction, current: str) -> L
     # Discord has a limit of 25 choices
     return matches[:25]
 
-# Then define the pick command with autocomplete
-@bot.tree.command(name="pick", description="Pick a card from your current pack")
-@app_commands.describe(
-    card_name="Start typing a card name to see available options"
-)
+# Define all commands before bot initialization
+@app_commands.command(name="signup", description="Sign up for the current draft")
+async def signup(interaction: discord.Interaction):
+    guild_id = interaction.guild_id
+    
+    if guild_id not in bot.active_drafts:
+        bot.active_drafts[guild_id] = []
+    
+    if interaction.user in bot.active_drafts[guild_id]:
+        await interaction.response.send_message("You're already signed up for the draft!", ephemeral=True)
+        return
+    
+    bot.active_drafts[guild_id].append(interaction.user)
+    participant_list = "\n".join([f"{idx + 1}. {player.display_name}" 
+                                for idx, player in enumerate(bot.active_drafts[guild_id])])
+    
+    embed = discord.Embed(
+        title="Draft Signup",
+        description=f"{interaction.user.display_name} has signed up for the draft!\n\n**Current Participants:**\n{participant_list}",
+        color=discord.Color.green()
+    )
+    await interaction.response.send_message(embed=embed)
+
+@app_commands.command(name="clear_signup", description="Clear all signups for the current draft (Admin only)")
+async def clear_signup(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("You need administrator permissions to use this command!", ephemeral=True)
+        return
+    
+    guild_id = interaction.guild_id
+    bot.active_drafts[guild_id] = []
+    await interaction.response.send_message("Draft signups have been cleared!", ephemeral=True)
+
+@app_commands.command(name="pick", description="Pick a card from your current pack")
+@app_commands.describe(card_name="Start typing a card name to see available options")
 @app_commands.autocomplete(card_name=pick_autocomplete)
 async def pick(interaction: discord.Interaction, card_name: str):
     guild_id = interaction.guild_id
@@ -211,10 +144,7 @@ async def pick(interaction: discord.Interaction, card_name: str):
         if not draft.is_bot_turn():
             await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
 
-@bot.tree.command(
-    name="show_pack",
-    description="Show your current pack"
-)
+@app_commands.command(name="show_pack", description="Show your current pack")
 async def show_pack(interaction: discord.Interaction):
     guild_id = interaction.guild_id
     
@@ -248,23 +178,15 @@ async def show_pack(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(
-    name="startdraft",
-    description="Start a new draft with a Cube Cobra cube"
-)
+@app_commands.command(name="startdraft", description="Start a new draft with a Cube Cobra cube")
 @app_commands.describe(
-    cube_url="Either a Cube Cobra URL or cube ID (default test cube provided in test mode)",
+    cube_url="Either a Cube Cobra URL or cube ID",
     cards_per_pack="Number of cards per pack (default: 15)",
     num_packs="Number of packs per player (default: 3)",
     total_players="Total number of players in draft (default: 8)"
 )
-async def startdraft(
-    interaction: discord.Interaction,
-    cube_url: str = None,
-    cards_per_pack: int = 15,
-    num_packs: int = 3,
-    total_players: int = 8
-):
+async def startdraft(interaction: discord.Interaction, cube_url: str = None, 
+                    cards_per_pack: int = 15, num_packs: int = 3, total_players: int = 8):
     guild_id = interaction.guild_id
     
     # Use default test cube ID if in test mode and no cube_url provided
@@ -385,17 +307,9 @@ async def startdraft(
             ephemeral=True
         )
 
-@bot.tree.command(
-    name="viewpool",
-    description="View a player's drafted cards"
-)
-@app_commands.describe(
-    player="The player whose pool you want to view (defaults to yourself)"
-)
-async def viewpool(
-    interaction: discord.Interaction,
-    player: discord.Member = None
-):
+@app_commands.command(name="viewpool", description="View a player's drafted cards")
+@app_commands.describe(player="The player whose pool you want to view (defaults to yourself)")
+async def viewpool(interaction: discord.Interaction, player: discord.Member = None):
     guild_id = interaction.guild_id
     
     if guild_id not in bot.draft_sessions:
@@ -454,10 +368,7 @@ async def viewpool(
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(
-    name="quitdraft",
-    description="Quit the current draft and reset everything (Admin only)"
-)
+@app_commands.command(name="quitdraft", description="Quit the current draft and reset everything (Admin only)")
 async def quitdraft(interaction: discord.Interaction):
     """Quit the current draft and reset all states"""
     # Check if user has admin permissions
@@ -504,6 +415,48 @@ def handle_sigterm(*args):
     """Handle termination signal"""
     logging.info("Received termination signal")
     asyncio.create_task(bot.close())
+
+# Then define bot class and create instance
+class DraftBot(commands.Bot):
+    def __init__(self, *, test_mode: bool):
+        super().__init__(command_prefix=commands.when_mentioned_or("drafty"), intents=intents)
+        self.active_drafts: Dict[int, List[discord.Member]] = {}
+        self.draft_sessions: Dict[int, RochesterDraft] = {}
+        self.cube_parser = CubeCobraParser()
+        self.test_mode = test_mode
+        
+    async def setup_hook(self):
+        """This is called when the bot is done preparing data"""
+        print(f"Running in {'TEST' if self.test_mode else 'PRODUCTION'} mode")
+        
+        # Register commands
+        self.tree.add_command(signup)
+        self.tree.add_command(clear_signup)
+        self.tree.add_command(pick)
+        self.tree.add_command(show_pack)
+        self.tree.add_command(startdraft)
+        self.tree.add_command(viewpool)
+        self.tree.add_command(quitdraft)
+        
+        # Sync commands based on mode
+        try:
+            if self.test_mode and os.getenv('TEST_GUILD_ID'):
+                test_guild = discord.Object(id=int(os.getenv('TEST_GUILD_ID')))
+                self.tree.copy_global_to(guild=test_guild)
+                await self.tree.sync(guild=test_guild)
+                print(f"Test guild commands synced!")
+            else:
+                await self.tree.sync()
+                print("Global commands synced!")
+        except Exception as e:
+            print(f"Failed to sync commands: {e}")
+
+    async def on_ready(self):
+        print(f"Logged in as {self.user} (ID: {self.user.id})")
+        print("------")
+
+# Initialize bot with test mode flag
+bot = DraftBot(test_mode=args.test)
 
 # Run the bot
 if __name__ == "__main__":

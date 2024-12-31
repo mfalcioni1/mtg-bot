@@ -28,7 +28,7 @@ class RochesterDraft:
         self.player_pools: Dict[Union[discord.Member, DraftBot], List[CardData]] = {}
         self.bots: List[DraftBot] = []
         self.pack_display = PackDisplay()
-        self.picked_cards: Dict[str, CardData] = {}
+        self.picked_cards: Dict[str, List[CardData]] = {}
         self.draft_channel: Optional[discord.TextChannel] = None
         self.active_players: List[discord.Member] = []
         
@@ -134,9 +134,14 @@ class RochesterDraft:
         
         # Reset pick counter and direction for new pack
         self.state.current_pick = 1
-        self.state.current_player = self.state.current_pack_index
         self.state.direction = 1  # Reset direction to clockwise for new pack
-        self.picked_cards.clear()
+        
+        # Rotate player order - the player who opened the previous pack becomes last
+        # The current_pack_index determines who opens (goes first) in the new pack
+        self.state.current_player = self.state.current_pack_index
+        
+        # Clear the picked cards for the new pack
+        self.picked_cards = {}
         
         print(f"New pack index: {self.state.current_pack_index}")
         print(f"New pack number: {self.state.current_pack_number}")
@@ -156,7 +161,12 @@ class RochesterDraft:
         # Add to player's pool and remove from pack
         self.player_pools[player].append(picked_card)
         current_pack.remove(picked_card)
-        self.picked_cards[player.name if isinstance(player, DraftBot) else player.display_name] = picked_card
+        
+        # Add to picked cards list for this pack
+        player_name = player.name if isinstance(player, DraftBot) else player.display_name
+        if player_name not in self.picked_cards:
+            self.picked_cards[player_name] = []
+        self.picked_cards[player_name].append(picked_card)
         
         # Advance draft state
         self.advance_draft()
@@ -190,13 +200,24 @@ class RochesterDraft:
 
         current_player = self.get_current_player()
         player_name = current_player.name if isinstance(current_player, DraftBot) else current_player.display_name
+        
+        # Get pack opener (player who goes first in this pack)
+        pack_opener = self.active_players[self.state.current_pack_index].display_name \
+            if self.state.current_pack_index < self.num_human_players \
+            else self.bots[self.state.current_pack_index - self.num_human_players].name
+
+        # Calculate which pack number this is for the opener
+        player_pack_number = (self.state.current_pack_index + 1) % self.num_players
+        if player_pack_number == 0:
+            player_pack_number = self.num_players
 
         pack_state = PackState(
             available_cards=current_pack,
             picked_cards=self.picked_cards,
             pack_number=self.state.current_pack_number,
-            pick_number=self.state.current_pick,
-            current_player=player_name
+            pack_opener=pack_opener,
+            current_player=player_name,
+            player_pack_number=player_pack_number
         )
 
         await self.pack_display.create_or_update_pack_display(

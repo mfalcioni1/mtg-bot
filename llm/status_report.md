@@ -34,6 +34,19 @@
 - ✅ Cleaned up command implementations
 - ✅ Added debug logging for draft state tracking
 
+### 5. Pack Display System
+- ✅ Reimplemented pack display to create new messages for each pack
+- ✅ Added tracking of all picks made in each pack
+- ✅ Improved pack information display with opener and pack numbers
+- ✅ Fixed message management to maintain pack history
+- ✅ Added proper cleanup of display messages
+
+### 6. Command Structure
+- ✅ Fixed command registration order issues
+- ✅ Moved command definitions outside bot class
+- ✅ Improved command initialization in setup_hook
+- ✅ Fixed autocomplete functionality for card picking
+
 ## Current Status
 
 ### Working Features
@@ -51,17 +64,21 @@
 - Environment-aware command syncing
 - Graceful shutdown handling
 - Proper command registration
+- New pack display system with pick history
+- Pack-specific message tracking
+- Improved pack information display
+- Proper command registration order
 
 ### Known Issues
 1. Player Information
-   - Need to reimplemented picked cards display
+   - ✅ Completed
    - Could improve pool organization and display
    - Missing draft progress indicators
 
 ## Next Steps
 
 1. Player Information System
-   - Rebuild picked cards tracking
+   - ✅ Completed
    - Add draft progress visualization
    - Improve pool organization display
    - Add statistics and analytics
