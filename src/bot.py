@@ -12,6 +12,7 @@ import asyncio
 from aiohttp import web
 import logging
 import signal
+from v4cb import V4CBGame
 
 # Add argument parsing
 parser = argparse.ArgumentParser(description='Run the MTG Draft Discord Bot')
@@ -411,6 +412,186 @@ async def quitdraft(interaction: discord.Interaction):
             ephemeral=True
         )
 
+@app_commands.command(name="v4cb_start", description="Start a new V4CB game with a banned list")
+@app_commands.describe(banned_list="Comma-separated list of banned cards")
+async def v4cb_start(interaction: discord.Interaction, banned_list: str):
+    """Start a new V4CB game"""
+    channel_id = interaction.channel_id
+    
+    if channel_id in bot.v4cb_games and bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's already an active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    # Create new game or get existing game instance
+    if channel_id not in bot.v4cb_games:
+        bot.v4cb_games[channel_id] = V4CBGame(channel_id)
+    
+    # Parse banned list
+    banned_cards = [card.strip() for card in banned_list.split(',')]
+    
+    # Start the game
+    bot.v4cb_games[channel_id].start_game(banned_cards)
+    
+    await interaction.response.send_message(
+        f"V4CB game started! Banned cards:\n{', '.join(banned_cards)}\n\n"
+        f"Use `/v4cb_submit` to submit your cards!"
+    )
+
+@app_commands.command(name="v4cb_submit", description="Submit your cards for V4CB")
+@app_commands.describe(cards="Comma-separated list of exactly 4 cards")
+async def v4cb_submit(interaction: discord.Interaction, cards: str):
+    """Submit cards for V4CB"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    # Parse cards
+    card_list = [card.strip() for card in cards.split(',')]
+    
+    # Submit cards
+    success, error = bot.v4cb_games[channel_id].submit_cards(interaction.user, card_list)
+    
+    if not success:
+        await interaction.response.send_message(error, ephemeral=True)
+        return
+    
+    # Create status message
+    game = bot.v4cb_games[channel_id]
+    submitted_players = [player.display_name for player in game.submissions.keys()]
+    
+    embed = discord.Embed(
+        title="Cards Submitted Successfully!",
+        description="Your cards have been recorded.",
+        color=discord.Color.green()
+    )
+    
+    embed.add_field(
+        name="Current Submissions",
+        value="\n".join(submitted_players),
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # Send a public message about the new submission
+    public_embed = discord.Embed(
+        title="New V4CB Submission",
+        description=f"{interaction.user.display_name} has submitted their cards!",
+        color=discord.Color.blue()
+    )
+    public_embed.add_field(
+        name="Players who have submitted",
+        value="\n".join(submitted_players),
+        inline=False
+    )
+    await interaction.channel.send(embed=public_embed)
+
+@app_commands.command(name="v4cb_reveal", description="Reveal all submitted cards")
+async def v4cb_reveal(interaction: discord.Interaction):
+    """Reveal all submitted cards"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    submissions = bot.v4cb_games[channel_id].get_all_submissions()
+    
+    if not submissions:
+        await interaction.response.send_message("No submissions to reveal!")
+        return
+    
+    # Create reveal message
+    reveal_msg = "**V4CB Submissions:**\n\n"
+    for player, cards in submissions.items():
+        reveal_msg += f"**{player.display_name}**:\n{', '.join(cards)}\n\n"
+    
+    await interaction.response.send_message(reveal_msg)
+
+@app_commands.command(name="v4cb_update_banned", description="Update the banned list")
+@app_commands.describe(banned_list="Comma-separated list of banned cards")
+async def v4cb_update_banned(interaction: discord.Interaction, banned_list: str):
+    """Update the banned list"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    # Parse and update banned list
+    banned_cards = [card.strip() for card in banned_list.split(',')]
+    bot.v4cb_games[channel_id].update_banned_list(banned_cards)
+    
+    await interaction.response.send_message(
+        f"Banned list updated! New banned cards:\n{', '.join(banned_cards)}"
+    )
+
+@app_commands.command(name="v4cb_end", description="End the current V4CB game")
+async def v4cb_end(interaction: discord.Interaction):
+    """End the current V4CB game"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    bot.v4cb_games[channel_id].end_game()
+    await interaction.response.send_message("V4CB game ended!")
+
+@app_commands.command(name="v4cb_status", description="Show the current game status")
+async def v4cb_status(interaction: discord.Interaction):
+    """Show the current game status, including submissions and banned list"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    game = bot.v4cb_games[channel_id]
+    
+    # Create status message
+    embed = discord.Embed(
+        title="V4CB Game Status",
+        color=discord.Color.blue()
+    )
+    
+    # Add submitted players field
+    submitted_players = [player.display_name for player in game.submissions.keys()]
+    embed.add_field(
+        name="Submitted Players",
+        value="\n".join(submitted_players) if submitted_players else "No submissions yet",
+        inline=False
+    )
+    
+    # Add banned list field
+    embed.add_field(
+        name="Banned Cards",
+        value="\n".join(sorted(game.banned_cards)) if game.banned_cards else "No banned cards",
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed)
+
 def handle_sigterm(*args):
     """Handle termination signal"""
     logging.info("Received termination signal")
@@ -424,6 +605,7 @@ class DraftBot(commands.Bot):
         self.draft_sessions: Dict[int, RochesterDraft] = {}
         self.cube_parser = CubeCobraParser()
         self.test_mode = test_mode
+        self.v4cb_games: Dict[int, V4CBGame] = {}
         
     async def setup_hook(self):
         """This is called when the bot is done preparing data"""
@@ -437,6 +619,12 @@ class DraftBot(commands.Bot):
         self.tree.add_command(startdraft)
         self.tree.add_command(viewpool)
         self.tree.add_command(quitdraft)
+        self.tree.add_command(v4cb_start)
+        self.tree.add_command(v4cb_submit)
+        self.tree.add_command(v4cb_reveal)
+        self.tree.add_command(v4cb_update_banned)
+        self.tree.add_command(v4cb_end)
+        self.tree.add_command(v4cb_status)
         
         # Sync commands based on mode
         try:
