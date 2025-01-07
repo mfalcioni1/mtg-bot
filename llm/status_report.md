@@ -59,6 +59,10 @@
 - ✅ Added public submission announcements
 - ✅ Created game status command with embedded messages
 - ✅ Integrated with existing bot infrastructure
+- ✅ Added round-based submission clearing
+- ✅ Improved banned list management with both update and overwrite options
+- ✅ Enhanced error messages with better formatting and clarity
+- ✅ Added detailed feedback for banned list changes
 
 ## Current Status
 
@@ -86,9 +90,11 @@
 - Player order management
 - V4CB game core mechanics
 - Card submission and validation
-- Banned list management
+- Advanced banned list management (add/overwrite)
 - Status tracking and display
 - Public/private messaging system
+- Round-based submission handling
+- Clear error messaging
 
 ### Known Issues
 1. Player Information
@@ -102,8 +108,9 @@
 3. V4CB Implementation
    - Could add card validation against a card database
    - Consider adding game history tracking
-   - Might need round management system
-   - Could improve banned list organization
+   - Could add round numbering/tracking
+   - Might need player registration system
+   - Could add export functionality for game results
 
 ## Next Steps
 
@@ -128,9 +135,10 @@
 4. V4CB Improvements
    - Add card validation against official database
    - Implement game history tracking
-   - Add round management system
-   - Improve banned list organization and display
+   - Add round numbering system
+   - Implement player registration
    - Consider adding export functionality for game results
+   - Add game statistics tracking
 
 ## Technical Notes
 

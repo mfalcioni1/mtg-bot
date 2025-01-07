@@ -35,7 +35,7 @@ class V4CBGame:
         # Check against banned list
         banned_cards = [card for card in cards if card in self.banned_cards]
         if banned_cards:
-            return False, f"The following cards are banned: {', '.join(banned_cards)}"
+            return False, f"**Submission Refused:** Your submission contains banned card(s):\n**{', '.join(banned_cards)}**\n\nPlease submit a new set of cards that doesn't include banned cards."
             
         self.submissions[player] = cards
         return True, None
@@ -44,11 +44,26 @@ class V4CBGame:
         """Get all submissions for reveal"""
         return self.submissions
     
+    def clear_submissions(self) -> None:
+        """Clear all current submissions without ending the game"""
+        self.submissions.clear()
+    
+    def reveal_and_reset(self) -> Dict[discord.Member, List[str]]:
+        """Get all submissions and clear them for the next round"""
+        submissions = self.submissions.copy()  # Make a copy of current submissions
+        self.submissions.clear()  # Clear for next round
+        return submissions
+    
     def update_banned_list(self, new_banned_cards: List[str]) -> None:
-        """Update the banned list with new cards"""
-        self.banned_cards = set(card.lower() for card in new_banned_cards)
+        """Add new cards to the banned list"""
+        # Convert new cards to lowercase and add them to existing banned cards
+        self.banned_cards.update(card.lower() for card in new_banned_cards)
     
     def end_game(self) -> None:
         """End the current game"""
         self.is_active = False
         self.submissions.clear() 
+    
+    def set_banned_list(self, banned_list: List[str]) -> None:
+        """Overwrite the current banned list with a new one"""
+        self.banned_cards = set(card.lower() for card in banned_list) 

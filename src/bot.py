@@ -494,9 +494,9 @@ async def v4cb_submit(interaction: discord.Interaction, cards: str):
     )
     await interaction.channel.send(embed=public_embed)
 
-@app_commands.command(name="v4cb_reveal", description="Reveal all submitted cards")
+@app_commands.command(name="v4cb_reveal", description="Reveal all submitted cards and start new round")
 async def v4cb_reveal(interaction: discord.Interaction):
-    """Reveal all submitted cards"""
+    """Reveal all submitted cards and reset for next round"""
     channel_id = interaction.channel_id
     
     if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
@@ -506,23 +506,39 @@ async def v4cb_reveal(interaction: discord.Interaction):
         )
         return
     
-    submissions = bot.v4cb_games[channel_id].get_all_submissions()
+    # Get submissions and reset for next round
+    submissions = bot.v4cb_games[channel_id].reveal_and_reset()
     
     if not submissions:
         await interaction.response.send_message("No submissions to reveal!")
         return
     
     # Create reveal message
-    reveal_msg = "**V4CB Submissions:**\n\n"
-    for player, cards in submissions.items():
-        reveal_msg += f"**{player.display_name}**:\n{', '.join(cards)}\n\n"
+    embed = discord.Embed(
+        title="V4CB Round Results",
+        description="All submissions for this round:",
+        color=discord.Color.gold()
+    )
     
-    await interaction.response.send_message(reveal_msg)
+    for player, cards in submissions.items():
+        embed.add_field(
+            name=player.display_name,
+            value=", ".join(cards),
+            inline=False
+        )
+    
+    embed.add_field(
+        name="Next Round",
+        value="All submissions have been cleared. Players can now submit new cards for the next round.",
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed)
 
-@app_commands.command(name="v4cb_update_banned", description="Update the banned list")
-@app_commands.describe(banned_list="Comma-separated list of banned cards")
+@app_commands.command(name="v4cb_update_banned", description="Add cards to the banned list")
+@app_commands.describe(banned_list="Comma-separated list of cards to ban")
 async def v4cb_update_banned(interaction: discord.Interaction, banned_list: str):
-    """Update the banned list"""
+    """Add cards to the banned list"""
     channel_id = interaction.channel_id
     
     if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
@@ -533,12 +549,31 @@ async def v4cb_update_banned(interaction: discord.Interaction, banned_list: str)
         return
     
     # Parse and update banned list
-    banned_cards = [card.strip() for card in banned_list.split(',')]
-    bot.v4cb_games[channel_id].update_banned_list(banned_cards)
+    new_banned_cards = [card.strip() for card in banned_list.split(',')]
+    game = bot.v4cb_games[channel_id]
     
-    await interaction.response.send_message(
-        f"Banned list updated! New banned cards:\n{', '.join(banned_cards)}"
+    # Store current banned list size
+    old_size = len(game.banned_cards)
+    
+    # Update the banned list
+    game.update_banned_list(new_banned_cards)
+    
+    # Calculate newly added cards
+    cards_added = len(game.banned_cards) - old_size
+    
+    embed = discord.Embed(
+        title="Banned List Updated",
+        description=f"Added {cards_added} new card(s) to the banned list.",
+        color=discord.Color.blue()
     )
+    
+    embed.add_field(
+        name="Current Banned List",
+        value="\n".join(sorted(game.banned_cards)) if game.banned_cards else "No banned cards",
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed)
 
 @app_commands.command(name="v4cb_end", description="End the current V4CB game")
 async def v4cb_end(interaction: discord.Interaction):
@@ -592,6 +627,63 @@ async def v4cb_status(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
+@app_commands.command(name="v4cb_set_banned", description="Overwrite the current banned list with a new one")
+@app_commands.describe(banned_list="Comma-separated list of cards for the new banned list")
+async def v4cb_set_banned(interaction: discord.Interaction, banned_list: str):
+    """Overwrite the current banned list"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    # Parse and set new banned list
+    new_banned_list = [card.strip() for card in banned_list.split(',')]
+    game = bot.v4cb_games[channel_id]
+    
+    # Store old list for comparison
+    old_banned_list = set(game.banned_cards)
+    
+    # Set the new banned list
+    game.set_banned_list(new_banned_list)
+    
+    # Create informative embed
+    embed = discord.Embed(
+        title="Banned List Overwritten",
+        description="The banned list has been completely replaced.",
+        color=discord.Color.orange()
+    )
+    
+    # Show removed cards if any
+    removed_cards = old_banned_list - game.banned_cards
+    if removed_cards:
+        embed.add_field(
+            name="Removed Cards",
+            value="\n".join(sorted(removed_cards)),
+            inline=False
+        )
+    
+    # Show added cards if any
+    added_cards = game.banned_cards - old_banned_list
+    if added_cards:
+        embed.add_field(
+            name="Added Cards",
+            value="\n".join(sorted(added_cards)),
+            inline=False
+        )
+    
+    # Show current complete list
+    embed.add_field(
+        name="Current Banned List",
+        value="\n".join(sorted(game.banned_cards)) if game.banned_cards else "No banned cards",
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed)
+
 def handle_sigterm(*args):
     """Handle termination signal"""
     logging.info("Received termination signal")
@@ -625,6 +717,7 @@ class DraftBot(commands.Bot):
         self.tree.add_command(v4cb_update_banned)
         self.tree.add_command(v4cb_end)
         self.tree.add_command(v4cb_status)
+        self.tree.add_command(v4cb_set_banned)
         
         # Sync commands based on mode
         try:
