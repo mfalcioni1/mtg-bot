@@ -179,14 +179,14 @@ async def show_pack(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@app_commands.command(name="startdraft", description="Start a new draft with a Cube Cobra cube")
+@app_commands.command(name="start_draft", description="Start a new draft with a Cube Cobra cube")
 @app_commands.describe(
     cube_url="Either a Cube Cobra URL or cube ID",
     cards_per_pack="Number of cards per pack (default: 15)",
     num_packs="Number of packs per player (default: 3)",
     total_players="Total number of players in draft (default: 8)"
 )
-async def startdraft(interaction: discord.Interaction, cube_url: str = None, 
+async def start_draft(interaction: discord.Interaction, cube_url: str = None, 
                     cards_per_pack: int = 15, num_packs: int = 3, total_players: int = 8):
     guild_id = interaction.guild_id
     
@@ -302,15 +302,15 @@ async def startdraft(interaction: discord.Interaction, cube_url: str = None,
         await draft.update_pack_display()
         
     except Exception as e:
-        print(f"Error in startdraft: {e}")  # Log the error
+        print(f"Error in start_draft: {e}")  # Log the error
         await interaction.followup.send(
             "An unexpected error occurred while starting the draft. Please try again later.", 
             ephemeral=True
         )
 
-@app_commands.command(name="viewpool", description="View a player's drafted cards")
+@app_commands.command(name="view_pool", description="View a player's drafted cards")
 @app_commands.describe(player="The player whose pool you want to view (defaults to yourself)")
-async def viewpool(interaction: discord.Interaction, player: discord.Member = None):
+async def view_pool(interaction: discord.Interaction, player: discord.Member = None):
     guild_id = interaction.guild_id
     
     if guild_id not in bot.draft_sessions:
@@ -369,8 +369,8 @@ async def viewpool(interaction: discord.Interaction, player: discord.Member = No
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@app_commands.command(name="quitdraft", description="Quit the current draft and reset everything (Admin only)")
-async def quitdraft(interaction: discord.Interaction):
+@app_commands.command(name="quit_draft", description="Quit the current draft and reset everything (Admin only)")
+async def quit_draft(interaction: discord.Interaction):
     """Quit the current draft and reset all states"""
     # Check if user has admin permissions
     if not interaction.user.guild_permissions.administrator:
@@ -406,7 +406,7 @@ async def quitdraft(interaction: discord.Interaction):
         )
         
     except Exception as e:
-        print(f"Error in quitdraft: {e}")
+        print(f"Error in quit_draft: {e}")
         await interaction.response.send_message(
             "An error occurred while trying to quit the draft. Please try again.",
             ephemeral=True
@@ -507,7 +507,7 @@ async def v4cb_reveal(interaction: discord.Interaction):
         return
     
     # Get submissions and reset for next round
-    submissions = bot.v4cb_games[channel_id].reveal_and_reset()
+    submissions = bot.v4cb_games[channel_id].reveal()
     
     if not submissions:
         await interaction.response.send_message("No submissions to reveal!")
@@ -528,8 +528,8 @@ async def v4cb_reveal(interaction: discord.Interaction):
         )
     
     embed.add_field(
-        name="Next Round",
-        value="All submissions have been cleared. Players can now submit new cards for the next round.",
+        name="Discuss the round results and submit winners",
+        value="Identify the winners of the round and submit them using `/v4cb_submit_winner`",
         inline=False
     )
     
@@ -684,6 +684,267 @@ async def v4cb_set_banned(interaction: discord.Interaction, banned_list: str):
     
     await interaction.response.send_message(embed=embed)
 
+@app_commands.command(name="v4cb_see_my_deck", description="View your currently submitted deck for this round")
+async def v4cb_see_my_deck(interaction: discord.Interaction):
+    """Show the requesting user their currently submitted deck"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    game = bot.v4cb_games[channel_id]
+    user_submission = game.submissions.get(interaction.user)
+    
+    if not user_submission:
+        await interaction.response.send_message(
+            "You haven't submitted any cards for this round yet!",
+            ephemeral=True
+        )
+        return
+    
+    embed = discord.Embed(
+        title="Your Current V4CB Submission",
+        description="Here are the cards you submitted for this round:",
+        color=discord.Color.blue()
+    )
+    
+    # Add cards as a formatted list
+    embed.add_field(
+        name="Your Cards",
+        value="\n".join(f"• {card}" for card in user_submission),
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@app_commands.command(name="v4cb_clear_banned", description="Remove all cards from the banned list")
+async def v4cb_clear_banned(interaction: discord.Interaction):
+    """Clear all cards from the banned list"""
+    # Check for admin permissions
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "You need administrator permissions to clear the banned list!",
+            ephemeral=True
+        )
+        return
+
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    game = bot.v4cb_games[channel_id]
+    
+    # Store current banned list for the message
+    old_banned_list = game.banned_cards.copy()
+    
+    # Clear the banned list
+    game.clear_banned_list()
+    
+    embed = discord.Embed(
+        title="Banned List Cleared",
+        description="All cards have been removed from the banned list.",
+        color=discord.Color.green()
+    )
+    
+    if old_banned_list:
+        embed.add_field(
+            name="Previously Banned Cards",
+            value="\n".join(sorted(old_banned_list)),
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
+
+@app_commands.command(name="v4cb_remove_banned_card", description="Remove a single card from the banned list")
+@app_commands.describe(card="The card to remove from the banned list")
+async def v4cb_remove_banned_card(interaction: discord.Interaction, card: str):
+    """Remove a single card from the banned list"""
+    # Check for admin permissions
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "You need administrator permissions to modify the banned list!",
+            ephemeral=True
+        )
+        return
+
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    game = bot.v4cb_games[channel_id]
+    success, error = game.remove_banned_card(card)
+    
+    if not success:
+        await interaction.response.send_message(
+            f"Error: {error}",
+            ephemeral=True
+        )
+        return
+    
+    embed = discord.Embed(
+        title="Card Removed from Banned List",
+        description=f"Successfully removed '{card}' from the banned list.",
+        color=discord.Color.green()
+    )
+    
+    # Show current banned list
+    embed.add_field(
+        name="Current Banned List",
+        value="\n".join(sorted(game.banned_cards)) if game.banned_cards else "No banned cards",
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed)
+
+@app_commands.command(name="v4cb_submit_winner", description="Submit winner(s) for the current round")
+@app_commands.describe(winners="Comma-separated list of winning players")
+async def v4cb_submit_winner(interaction: discord.Interaction, winners: str):
+    """Submit winner(s) for the current round and update scores"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    game = bot.v4cb_games[channel_id]
+    winner_names = [name.strip() for name in winners.split(',')]
+    
+    success, error = game.submit_winner(winner_names)
+    if not success:
+        await interaction.response.send_message(
+            f"Error: {error}",
+            ephemeral=True
+        )
+        return
+    
+    # Create response embed
+    embed = discord.Embed(
+        title="Round Winners Submitted",
+        description=f"Winner(s): {', '.join(winner_names)}",
+        color=discord.Color.gold()
+    )
+    
+    # Add current standings
+    scores = game.get_scores()
+    if scores:
+        standings = "\n".join(f"• {player}: {score}" for player, score in 
+                            sorted(scores.items(), key=lambda x: (-x[1], x[0])))
+        embed.add_field(
+            name="Current Standings",
+            value=standings,
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
+
+@app_commands.command(name="v4cb_score", description="Show current game scores")
+async def v4cb_score(interaction: discord.Interaction):
+    """Display current game scores"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    game = bot.v4cb_games[channel_id]
+    scores = game.get_scores()
+    
+    if not scores:
+        await interaction.response.send_message(
+            "No scores recorded yet!",
+            ephemeral=True
+        )
+        return
+    
+    embed = discord.Embed(
+        title="V4CB Game Standings",
+        color=discord.Color.blue()
+    )
+    
+    # Sort by score (descending) then name (ascending)
+    standings = "\n".join(f"• {player}: {score}" for player, score in 
+                         sorted(scores.items(), key=lambda x: (-x[1], x[0])))
+    embed.add_field(
+        name="Current Standings",
+        value=standings,
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed)
+
+@app_commands.command(name="v4cb_overwrite_score", description="Overwrite the current scores (Admin only)")
+@app_commands.describe(scores="Format: player1=score1,player2=score2,...")
+async def v4cb_overwrite_score(interaction: discord.Interaction, scores: str):
+    """Overwrite current game scores"""
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "You need administrator permissions to overwrite scores!",
+            ephemeral=True
+        )
+        return
+    
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    game = bot.v4cb_games[channel_id]
+    
+    try:
+        # Parse scores (format: player1=score1,player2=score2,...)
+        new_scores = {}
+        for entry in scores.split(','):
+            player, score = entry.split('=')
+            new_scores[player.strip()] = int(score.strip())
+        
+        game.set_scores(new_scores)
+        
+        embed = discord.Embed(
+            title="Scores Updated",
+            description="The scores have been overwritten with the new values.",
+            color=discord.Color.green()
+        )
+        
+        standings = "\n".join(f"• {player}: {score}" for player, score in 
+                            sorted(new_scores.items(), key=lambda x: (-x[1], x[0])))
+        embed.add_field(
+            name="Current Standings",
+            value=standings,
+            inline=False
+        )
+        
+        await interaction.response.send_message(embed=embed)
+        
+    except ValueError:
+        await interaction.response.send_message(
+            "Invalid format! Use: player1=score1,player2=score2,...",
+            ephemeral=True
+        )
+
 def handle_sigterm(*args):
     """Handle termination signal"""
     logging.info("Received termination signal")
@@ -708,9 +969,9 @@ class DraftBot(commands.Bot):
         self.tree.add_command(clear_signup)
         self.tree.add_command(pick)
         self.tree.add_command(show_pack)
-        self.tree.add_command(startdraft)
-        self.tree.add_command(viewpool)
-        self.tree.add_command(quitdraft)
+        self.tree.add_command(start_draft)
+        self.tree.add_command(view_pool)
+        self.tree.add_command(quit_draft)
         self.tree.add_command(v4cb_start)
         self.tree.add_command(v4cb_submit)
         self.tree.add_command(v4cb_reveal)
@@ -718,6 +979,12 @@ class DraftBot(commands.Bot):
         self.tree.add_command(v4cb_end)
         self.tree.add_command(v4cb_status)
         self.tree.add_command(v4cb_set_banned)
+        self.tree.add_command(v4cb_see_my_deck)
+        self.tree.add_command(v4cb_clear_banned)
+        self.tree.add_command(v4cb_remove_banned_card)
+        self.tree.add_command(v4cb_submit_winner)
+        self.tree.add_command(v4cb_score)
+        self.tree.add_command(v4cb_overwrite_score)
         
         # Sync commands based on mode
         try:

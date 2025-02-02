@@ -63,6 +63,12 @@
 - ✅ Improved banned list management with both update and overwrite options
 - ✅ Enhanced error messages with better formatting and clarity
 - ✅ Added detailed feedback for banned list changes
+- ✅ Added personal deck viewing command
+- ✅ Implemented comprehensive banned list management (clear, remove single card)
+- ✅ Added winner submission and score tracking system
+- ✅ Implemented score display and management commands
+- ✅ Added support for multiple winners per round
+- ✅ Improved round management with reveal-then-winner flow
 
 ## Current Status
 
@@ -95,6 +101,12 @@
 - Public/private messaging system
 - Round-based submission handling
 - Clear error messaging
+- Personal deck viewing
+- Advanced banned list management (clear, remove single card)
+- Score tracking and management
+- Winner submission system
+- Round completion workflow
+- Multiple winner support
 
 ### Known Issues
 1. Player Information
@@ -108,9 +120,11 @@
 3. V4CB Implementation
    - Could add card validation against a card database
    - Consider adding game history tracking
-   - Could add round numbering/tracking
-   - Might need player registration system
    - Could add export functionality for game results
+   - Need to implement cloud storage for game state persistence
+   - Consider adding round numbering/tracking
+   - Consider adding game history export
+   - Should implement backup/recovery for game state
 
 ## Next Steps
 
@@ -135,10 +149,11 @@
 4. V4CB Improvements
    - Add card validation against official database
    - Implement game history tracking
-   - Add round numbering system
-   - Implement player registration
    - Consider adding export functionality for game results
-   - Add game statistics tracking
+   - Implement cloud storage for game state
+   - Add backup/recovery system
+   - Consider adding analytics for game statistics
+   - Add round numbering system
 
 ## Technical Notes
 
