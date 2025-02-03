@@ -9,10 +9,10 @@ import argparse
 from draft_bots import DraftBot
 from draft import RochesterDraft
 import asyncio
-from aiohttp import web
 import logging
 import signal
-from v4cb import V4CBGame
+from v4cb import V4CBGame, BannedListPaginator
+from storage_manager import StorageManager
 
 # Add argument parsing
 parser = argparse.ArgumentParser(description='Run the MTG Draft Discord Bot')
@@ -23,6 +23,7 @@ args = parser.parse_args()
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
+intents.guilds = True
 
 # Load environment variables from .env file
 load_dotenv()
@@ -417,6 +418,7 @@ async def quit_draft(interaction: discord.Interaction):
 async def v4cb_start(interaction: discord.Interaction, banned_list: str):
     """Start a new V4CB game"""
     channel_id = interaction.channel_id
+    server_id = interaction.guild_id  # Get the server/guild ID
     
     if channel_id in bot.v4cb_games and bot.v4cb_games[channel_id].is_active:
         await interaction.response.send_message(
@@ -427,13 +429,13 @@ async def v4cb_start(interaction: discord.Interaction, banned_list: str):
     
     # Create new game or get existing game instance
     if channel_id not in bot.v4cb_games:
-        bot.v4cb_games[channel_id] = V4CBGame(channel_id)
+        bot.v4cb_games[channel_id] = V4CBGame(channel_id, server_id)  # Pass both IDs
     
     # Parse banned list
     banned_cards = [card.strip() for card in banned_list.split(',')]
     
     # Start the game
-    bot.v4cb_games[channel_id].start_game(banned_cards)
+    await bot.v4cb_games[channel_id].start_game(banned_cards)  # Note: start_game is now async
     
     await interaction.response.send_message(
         f"V4CB game started! Banned cards:\n{', '.join(banned_cards)}\n\n"
@@ -556,20 +558,20 @@ async def v4cb_update_banned(interaction: discord.Interaction, banned_list: str)
     old_size = len(game.banned_cards)
     
     # Update the banned list
-    game.update_banned_list(new_banned_cards)
+    await game.update_banned_list(new_banned_cards)
     
     # Calculate newly added cards
     cards_added = len(game.banned_cards) - old_size
     
     embed = discord.Embed(
         title="Banned List Updated",
-        description=f"Added {cards_added} new card(s) to the banned list.",
+        description=f"Added {cards_added} new card(s) to the banned list.\nTotal banned cards: {len(game.banned_cards)}",
         color=discord.Color.blue()
     )
     
     embed.add_field(
-        name="Current Banned List",
-        value="\n".join(sorted(game.banned_cards)) if game.banned_cards else "No banned cards",
+        name="View Banned List",
+        value="Use `/v4cb_banned` to see the complete list of banned cards.",
         inline=False
     )
     
@@ -587,7 +589,7 @@ async def v4cb_end(interaction: discord.Interaction):
         )
         return
     
-    bot.v4cb_games[channel_id].end_game()
+    await bot.v4cb_games[channel_id].end_game()
     await interaction.response.send_message("V4CB game ended!")
 
 @app_commands.command(name="v4cb_status", description="Show the current game status")
@@ -618,10 +620,10 @@ async def v4cb_status(interaction: discord.Interaction):
         inline=False
     )
     
-    # Add banned list field
+    # Add a note about viewing the banned list
     embed.add_field(
         name="Banned Cards",
-        value="\n".join(sorted(game.banned_cards)) if game.banned_cards else "No banned cards",
+        value=f"Use `/v4cb_banned` to view the complete banned list ({len(game.banned_cards)} cards banned)",
         inline=False
     )
     
@@ -648,7 +650,7 @@ async def v4cb_set_banned(interaction: discord.Interaction, banned_list: str):
     old_banned_list = set(game.banned_cards)
     
     # Set the new banned list
-    game.set_banned_list(new_banned_list)
+    await game.set_banned_list(new_banned_list)
     
     # Create informative embed
     embed = discord.Embed(
@@ -747,7 +749,7 @@ async def v4cb_clear_banned(interaction: discord.Interaction):
     old_banned_list = game.banned_cards.copy()
     
     # Clear the banned list
-    game.clear_banned_list()
+    await game.clear_banned_list()
     
     embed = discord.Embed(
         title="Banned List Cleared",
@@ -786,7 +788,7 @@ async def v4cb_remove_banned_card(interaction: discord.Interaction, card: str):
         return
     
     game = bot.v4cb_games[channel_id]
-    success, error = game.remove_banned_card(card)
+    success, error = await game.remove_banned_card(card)
     
     if not success:
         await interaction.response.send_message(
@@ -826,7 +828,7 @@ async def v4cb_submit_winner(interaction: discord.Interaction, winners: str):
     game = bot.v4cb_games[channel_id]
     winner_names = [name.strip() for name in winners.split(',')]
     
-    success, error = game.submit_winner(winner_names)
+    success, error = await game.submit_winner(winner_names)
     if not success:
         await interaction.response.send_message(
             f"Error: {error}",
@@ -921,7 +923,7 @@ async def v4cb_overwrite_score(interaction: discord.Interaction, scores: str):
             player, score = entry.split('=')
             new_scores[player.strip()] = int(score.strip())
         
-        game.set_scores(new_scores)
+        await game.set_scores(new_scores)
         
         embed = discord.Embed(
             title="Scores Updated",
@@ -945,6 +947,29 @@ async def v4cb_overwrite_score(interaction: discord.Interaction, scores: str):
             ephemeral=True
         )
 
+@app_commands.command(name="v4cb_banned", description="Show the current banned list with pagination")
+async def v4cb_banned(interaction: discord.Interaction):
+    """Show the banned list with pagination controls"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    game = bot.v4cb_games[channel_id]
+    embeds = await game.create_banned_list_embeds()
+    
+    if not embeds:
+        await interaction.response.send_message("No cards are currently banned.", ephemeral=True)
+        return
+    
+    view = BannedListPaginator(embeds)
+    # Store the message for the view's timeout handler
+    view.message = await interaction.response.send_message(embed=embeds[0], view=view)
+
 def handle_sigterm(*args):
     """Handle termination signal"""
     logging.info("Received termination signal")
@@ -959,6 +984,7 @@ class DraftBot(commands.Bot):
         self.cube_parser = CubeCobraParser()
         self.test_mode = test_mode
         self.v4cb_games: Dict[int, V4CBGame] = {}
+        self.storage = StorageManager()
         
     async def setup_hook(self):
         """This is called when the bot is done preparing data"""
@@ -985,6 +1011,7 @@ class DraftBot(commands.Bot):
         self.tree.add_command(v4cb_submit_winner)
         self.tree.add_command(v4cb_score)
         self.tree.add_command(v4cb_overwrite_score)
+        self.tree.add_command(v4cb_banned)
         
         # Sync commands based on mode
         try:
@@ -1002,6 +1029,30 @@ class DraftBot(commands.Bot):
     async def on_ready(self):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
         print("------")
+        
+        # Load existing games after bot is ready
+        print("Loading existing games...")
+        await self.load_existing_games()
+
+    async def load_existing_games(self):
+        """Load existing V4CB games from storage"""
+        try:
+            # Get list of all guilds the bot is in
+            for guild in self.guilds:
+                # For each guild, check all text channels
+                for channel in guild.text_channels:
+                    # Check if a game exists in storage for this channel
+                    if await V4CBGame.game_exists(self.storage, str(guild.id), str(channel.id)):
+                        print(f"Game exists in storage for channel {channel.id}")
+                        # Create and load the game
+                        game = V4CBGame(channel.id, guild.id)
+                        await game.load_state()
+                        if game.is_active:  # Only add if game was actually loaded
+                            self.v4cb_games[channel.id] = game
+                            logging.info(f"Loaded existing game in channel {channel.id}")
+        
+        except Exception as e:
+            logging.error(f"Error loading existing games: {str(e)}")
 
 # Initialize bot with test mode flag
 bot = DraftBot(test_mode=args.test)
