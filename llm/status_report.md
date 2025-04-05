@@ -27,8 +27,9 @@
 - ✅ Implemented proper "snake" draft order within packs
 - ✅ Added draft completion detection and results generation
 - ✅ Fixed Rochester draft pick order logic to match specifications
-- ✅ Implemented correct pack rotation between rounds
+- ✅ Implemented proper pack rotation between rounds
 - ✅ Corrected player order progression within packs
+- ✅ Implemented true random seating order for both human and bot players
 
 ### 4. Code Organization
 - ✅ Separated concerns between bot commands and draft logic
@@ -107,6 +108,7 @@
 - Correct Rochester draft pick sequencing
 - Pack-to-pack rotation handling
 - Player order management
+- Randomized draft seating for all players
 - V4CB game core mechanics
 - Card submission and validation
 - Advanced banned list management (add/overwrite)

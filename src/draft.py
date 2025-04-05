@@ -43,17 +43,26 @@ class RochesterDraft:
     
     def add_bots(self, num_bots: int):
         """Add bot players to fill remaining seats"""
-        for i in range(num_bots):
-            bot = create_bot(name=f"Bot_{i+1}")
-            self.bots.append(bot)
-            self.player_pools[bot] = []
+        self.bots = [create_bot(name=f"Bot_{i+1}") for i in range(num_bots)]
+        # Don't initialize player pools here anymore, it will be done in initialize_player_pools
     
     def initialize_player_pools(self, players: List[discord.Member]):
         """Initialize empty card pools for all players and bots"""
+        # First store the players temporarily
         self.active_players = players
-        self.player_pools = {player: [] for player in players}
-        for bot in self.bots:
-            self.player_pools[bot] = []
+        
+        # Create combined list of all players (human and bots)
+        all_players = players + self.bots
+        
+        # Randomize the complete player order
+        randomized_players = random.sample(all_players, len(all_players))
+        
+        # Update active_players and player_pools based on the randomized order
+        self.active_players = [p for p in randomized_players if isinstance(p, discord.Member)]
+        self.bots = [p for p in randomized_players if isinstance(p, DraftBot)]
+        
+        # Initialize pools in randomized order
+        self.player_pools = {player: [] for player in randomized_players}
     
     def prepare_packs(self):
         """Create packs for the draft"""
@@ -77,13 +86,13 @@ class RochesterDraft:
     
     def get_current_player(self) -> Union[discord.Member, DraftBot]:
         """Get the current player or bot"""
-        if self.is_bot_turn():
-            return self.bots[self.state.current_player - self.num_human_players]
-        return self.active_players[self.state.current_player]
+        all_players = self.active_players + self.bots
+        return all_players[self.state.current_player % len(all_players)]
     
     def is_bot_turn(self) -> bool:
         """Check if it's currently a bot's turn"""
-        return self.state.current_player >= self.num_human_players
+        current_player = self.get_current_player()
+        return isinstance(current_player, DraftBot)
     
     def advance_draft(self):
         """Advance the draft state after a pick"""
