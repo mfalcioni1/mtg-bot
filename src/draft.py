@@ -1,11 +1,12 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 import random
 import discord
 from dataclasses import dataclass
 from cube_parser import CardData
-from draft_bots import DraftBot, create_bot
+from draft_bots import DraftBot, create_bot, RandomBot
 from pack_display import PackDisplay, PackState
 from io import StringIO
+from storage_manager import StorageManager
 
 @dataclass
 class DraftState:
@@ -15,6 +16,27 @@ class DraftState:
     current_pick: int        # Which pick we're on in the current pack (1-based)
     direction: int           # 1 for clockwise, -1 for counterclockwise
     current_player: int      # Index of current player (0-based)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert DraftState to dictionary for serialization"""
+        return {
+            'current_pack_number': self.current_pack_number,
+            'current_pack_index': self.current_pack_index,
+            'current_pick': self.current_pick,
+            'direction': self.direction,
+            'current_player': self.current_player
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'DraftState':
+        """Create DraftState from dictionary"""
+        return cls(
+            current_pack_number=data['current_pack_number'],
+            current_pack_index=data['current_pack_index'],
+            current_pick=data['current_pick'],
+            direction=data['direction'],
+            current_player=data['current_player']
+        )
 
 class RochesterDraft:
     """Manages a Rochester draft session"""
@@ -31,6 +53,7 @@ class RochesterDraft:
         self.picked_cards: Dict[str, List[CardData]] = {}
         self.draft_channel: Optional[discord.TextChannel] = None
         self.active_players: List[discord.Member] = []
+        self.storage = StorageManager()
         
         # Rochester-specific state
         self.state = DraftState(
@@ -44,16 +67,16 @@ class RochesterDraft:
     def add_bots(self, num_bots: int):
         """Add bot players to fill remaining seats"""
         for i in range(num_bots):
-            bot = create_bot(name=f"Bot_{i+1}")
-            self.bots.append(bot)
-            self.player_pools[bot] = []
+            bot_player = create_bot(name=f"Bot_{i+1}")
+            self.bots.append(bot_player)
+            self.player_pools[bot_player] = []
     
-    def initialize_player_pools(self, players: List[discord.Member]):
+    def initialize_player_pools(self, human_players: List[discord.Member]):
         """Initialize empty card pools for all players and bots"""
-        self.active_players = players
-        self.player_pools = {player: [] for player in players}
-        for bot in self.bots:
-            self.player_pools[bot] = []
+        self.active_players = human_players
+        self.player_pools = {player: [] for player in human_players}
+        for bot_player in self.bots:
+            self.player_pools[bot_player] = []
     
     def prepare_packs(self):
         """Create packs for the draft"""
@@ -220,10 +243,125 @@ class RochesterDraft:
             for card in self.player_pools[player]:
                 results.append(f"- {card.name}")
         
-        # Then process bots
-        for bot in self.bots:
-            results.append(f"\n{bot.name}'s Picks:")
-            for card in self.player_pools[bot]:
+        # Then process bot players
+        for bot_player in self.bots:
+            results.append(f"\n{bot_player.name}'s Picks:")
+            for card in self.player_pools[bot_player]:
                 results.append(f"- {card.name}")
         
-        return "\n".join(results) 
+        return "\n".join(results)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert draft state to dictionary for serialization"""
+        return {
+            'cards': [card.to_dict() for card in self.cards],
+            'num_players': self.num_players,
+            'num_human_players': self.num_human_players,
+            'cards_per_pack': self.cards_per_pack,
+            'num_packs': self.num_packs,
+            'packs': [[card.to_dict() for card in pack] for pack in self.packs],
+            'player_pools': {
+                (player.id if isinstance(player, discord.Member) else player.name): 
+                [card.to_dict() for card in cards]
+                for player, cards in self.player_pools.items()
+            },
+            'bots': [{'name': bot_player.name, 'type': type(bot_player).__name__} for bot_player in self.bots],
+            'picked_cards': {
+                player: [card.to_dict() for card in cards]
+                for player, cards in self.picked_cards.items()
+            },
+            'draft_channel_id': self.draft_channel.id if self.draft_channel else None,
+            'active_player_ids': [player.id for player in self.active_players],
+            'state': self.state.to_dict()
+        }
+
+    @classmethod
+    async def from_dict(cls, data: Dict[str, Any], draft_bot: discord.ext.commands.Bot) -> 'RochesterDraft':
+        """Create RochesterDraft from dictionary"""
+        # Recreate cards
+        cards = [CardData.from_dict(card_data) for card_data in data['cards']]
+        
+        # Create draft instance
+        draft = cls(
+            cards=cards,
+            num_players=data['num_players'],
+            cards_per_pack=data['cards_per_pack'],
+            num_packs=data['num_packs'],
+            num_bots=len(data['bots'])
+        )
+        
+        # Recreate packs
+        draft.packs = [[CardData.from_dict(card_data) for card_data in pack] for pack in data['packs']]
+        
+        # Recreate bot players
+        for bot_data in data['bots']:
+            bot_type = bot_data['type']
+            if bot_type == 'RandomBot':
+                draft.bots.append(RandomBot(bot_data['name']))
+        
+        # Recreate player pools
+        draft.player_pools = {}
+        for player_id, cards_data in data['player_pools'].items():
+            if player_id.isdigit():
+                # Human player
+                player = await draft_bot.fetch_user(int(player_id))
+                draft.player_pools[player] = [CardData.from_dict(card_data) for card_data in cards_data]
+            else:
+                # Bot player
+                bot_player = next(b for b in draft.bots if b.name == player_id)
+                draft.player_pools[bot_player] = [CardData.from_dict(card_data) for card_data in cards_data]
+        
+        # Recreate picked cards
+        draft.picked_cards = {
+            player: [CardData.from_dict(card_data) for card_data in cards_data]
+            for player, cards_data in data['picked_cards'].items()
+        }
+        
+        # Recreate active players
+        draft.active_players = []
+        for player_id in data['active_player_ids']:
+            player = await draft_bot.fetch_user(player_id)
+            draft.active_players.append(player)
+        
+        # Set draft channel
+        if data['draft_channel_id']:
+            channel = await draft_bot.fetch_channel(data['draft_channel_id'])
+            draft.draft_channel = channel
+        
+        # Set state
+        draft.state = DraftState.from_dict(data['state'])
+        
+        return draft
+
+    @classmethod
+    async def load_state(cls, guild_id: int, channel_id: int, draft_bot: 'DraftBot') -> Optional['RochesterDraft']:
+        """Load draft state from storage"""
+        try:
+            # Load state from storage
+            state_data = await draft_bot.storage.load_game_state("rochester", guild_id, channel_id)
+            if not state_data:
+                return None
+            
+            # Create draft instance from state
+            draft = await cls.from_dict(state_data, draft_bot)  # Use draft_bot directly
+            draft.storage = draft_bot.storage
+            draft.draft_channel = draft_bot.get_channel(channel_id)
+            
+            return draft
+            
+        except Exception as e:
+            print(f"Error loading draft state: {e}")
+            return None
+
+    async def save_state(self, guild_id: int, channel_id: int) -> bool:
+        """Save draft state to storage"""
+        try:
+            return await self.storage.save_game_state(
+                game_type="rochester",
+                guild_id=guild_id,
+                channel_id=channel_id,
+                state=self.to_dict()
+            )
+        except Exception as e:
+            print(f"Error saving draft state: {e}")
+            return False 

@@ -39,7 +39,7 @@ async def pick_autocomplete(interaction: discord.Interaction, current: str) -> L
     draft = bot.draft_sessions[guild_id]
     current_pack = draft.get_current_pack()
     
-    # Check if it's the player's turn using the new method
+    # Check if it's the player's turn
     if not current_pack or interaction.user != draft.get_current_player():
         return []
     
@@ -89,8 +89,8 @@ async def clear_signup(interaction: discord.Interaction):
     bot.active_drafts[guild_id] = []
     await interaction.response.send_message("Draft signups have been cleared!", ephemeral=True)
 
-@app_commands.command(name="pick", description="Pick a card from your current pack")
-@app_commands.describe(card_name="Start typing a card name to see available options")
+@app_commands.command(name="pick", description="Pick a card from the current pack")
+@app_commands.describe(card_name="The name of the card you want to pick")
 @app_commands.autocomplete(card_name=pick_autocomplete)
 async def pick(interaction: discord.Interaction, card_name: str):
     guild_id = interaction.guild_id
@@ -106,45 +106,29 @@ async def pick(interaction: discord.Interaction, card_name: str):
         await interaction.response.send_message("It's not your turn to pick!", ephemeral=True)
         return
     
+    # Handle the pick
     picked_card = await draft.handle_pick(interaction.user, card_name)
     if not picked_card:
-        await interaction.response.send_message(
-            f"Couldn't find card '{card_name}' in the current pack!",
-            ephemeral=True
-        )
+        await interaction.response.send_message("Invalid card name! Please try again.", ephemeral=True)
         return
-
-    await interaction.response.send_message(
-        f"You picked {picked_card.name}!",
-        ephemeral=True
-    )
-
-    await draft.update_pack_display()
-
-    # Check if draft is complete before handling bot turns
-    if draft.is_draft_complete():
-        # Clear draft session
-        bot.draft_sessions.pop(guild_id, None)
-        bot.active_drafts[guild_id] = []
-        return
-
-    # Handle bot turns
-    if draft.is_bot_turn():
-        while draft.is_bot_turn() and not draft.is_draft_complete():
-            current_bot = draft.get_current_player()
-            current_pack = draft.get_current_pack()
-            if current_pack:
-                bot_pick = current_bot.make_pick(current_pack)
-                if bot_pick:
-                    await draft.handle_pick(current_bot, bot_pick.name)
-                    await interaction.channel.send(f"Bot {current_bot.name} picked {bot_pick.name}")
-                    await draft.update_pack_display()
     
-    # Only notify next player if draft isn't complete
-    if not draft.is_draft_complete():
+    # Save state after successful pick
+    await draft.storage.save_game_state(
+        game_type="rochester",
+        guild_id=guild_id,
+        channel_id=interaction.channel_id,
+        state=draft.to_dict()
+    )
+    
+    # If it's a bot's turn now, handle the pick
+    if draft.is_bot_turn():
+        await bot.handle_bot_pick(draft)
+    else:
+        # Notify next player
         next_player = draft.get_current_player()
-        if not draft.is_bot_turn():
-            await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
+        await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
+    
+    await interaction.response.send_message(f"You picked {picked_card.name}!", ephemeral=True)
 
 @app_commands.command(name="show_pack", description="Show your current pack")
 async def show_pack(interaction: discord.Interaction):
@@ -283,23 +267,23 @@ async def start_draft(interaction: discord.Interaction, cube_url: str = None,
         
         await interaction.followup.send(embed=embed)
         
+        # Save initial state
+        await draft.set_draft_channel(interaction.channel)
+        await draft.storage.save_game_state(
+            game_type="rochester",
+            guild_id=interaction.guild_id,
+            channel_id=interaction.channel_id,
+            state=draft.to_dict()
+        )
+        
         # If first player is a bot, start bot picking
         if draft.is_bot_turn():
-            while draft.is_bot_turn():
-                current_bot = draft.get_current_player()
-                current_pack = draft.get_current_pack()
-                if current_pack:
-                    picked_card = current_bot.make_pick(current_pack)
-                    if picked_card:
-                        await draft.handle_pick(current_bot, picked_card.name)
-                        await interaction.channel.send(f"Bot {current_bot.name} picked {picked_card.name}")
-                        await draft.update_pack_display()
-            
+            await bot.handle_bot_pick(draft)
+        else:
             # Notify first human player
             next_player = draft.get_current_player()
             await interaction.channel.send(f"{next_player.mention}, it's your turn to pick!")
         
-        await draft.set_draft_channel(interaction.channel)
         await draft.update_pack_display()
         
     except Exception as e:
@@ -370,48 +354,34 @@ async def view_pool(interaction: discord.Interaction, player: discord.Member = N
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@app_commands.command(name="quit_draft", description="Quit the current draft and reset everything (Admin only)")
+@app_commands.command(name="quit_draft", description="Quit the current draft (admin only)")
 async def quit_draft(interaction: discord.Interaction):
-    """Quit the current draft and reset all states"""
-    # Check if user has admin permissions
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "You need administrator permissions to use this command!", 
-            ephemeral=True
-        )
-        return
-    
     guild_id = interaction.guild_id
     
-    # Check if there's an active draft
     if guild_id not in bot.draft_sessions:
-        await interaction.response.send_message(
-            "There's no active draft to quit!", 
-            ephemeral=True
-        )
+        await interaction.response.send_message("There's no active draft in this server!", ephemeral=True)
         return
     
-    try:
-        # Clear the pack display
-        draft = bot.draft_sessions[guild_id]
-        await draft.pack_display.clear_display(guild_id)
-        
-        # Clear all states
-        bot.active_drafts[guild_id] = []
-        bot.draft_sessions.pop(guild_id, None)
-        
-        await interaction.response.send_message(
-            "Draft has been terminated. All states have been reset.\n"
-            "Use `/signup` to start a new draft!",
-            ephemeral=False
-        )
-        
-    except Exception as e:
-        print(f"Error in quit_draft: {e}")
-        await interaction.response.send_message(
-            "An error occurred while trying to quit the draft. Please try again.",
-            ephemeral=True
-        )
+    # Check if user has admin permissions
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("You need administrator permissions to quit the draft!", ephemeral=True)
+        return
+    
+    # Get draft session
+    draft = bot.draft_sessions[guild_id]
+    
+    # Delete saved state
+    await bot.storage.delete_game_state(
+        game_type="rochester",
+        guild_id=guild_id,
+        channel_id=interaction.channel_id
+    )
+    
+    # Clear draft session
+    bot.draft_sessions.pop(guild_id, None)
+    bot.active_drafts[guild_id] = []
+    
+    await interaction.response.send_message("Draft has been quit and all saved state has been cleared!", ephemeral=True)
 
 @app_commands.command(name="v4cb_start", description="Start a new V4CB game with a banned list")
 @app_commands.describe(banned_list="Comma-separated list of banned cards")
@@ -1026,13 +996,78 @@ class DraftBot(commands.Bot):
         except Exception as e:
             print(f"Failed to sync commands: {e}")
 
-    async def on_ready(self):
-        print(f"Logged in as {self.user} (ID: {self.user.id})")
-        print("------")
+    async def load_saved_drafts(self):
+        """Load saved draft states from storage"""
         
-        # Load existing games after bot is ready
-        print("Loading existing games...")
+        # Get all saved draft states
+        saved_states = await self.storage.list_game_states(game_type="rochester")
+        print(f"Found {len(saved_states)} saved draft states")
+        
+        for guild_id, channel_id in saved_states:
+            try:
+                print(f"Loading draft state for guild {guild_id}, channel {channel_id}...")
+                
+                # Load draft state
+                draft = await RochesterDraft.load_state(guild_id, channel_id, self)
+                if draft:
+                    # Add to active drafts
+                    self.draft_sessions[guild_id] = draft
+                    
+                    # Recreate active players list
+                    self.active_drafts[guild_id] = draft.active_players
+                    
+                    # Update pack display
+                    await draft.update_pack_display()
+                    
+                    # If it's a bot's turn, make the pick
+                    if draft.is_bot_turn():
+                        print(f"Bot's turn in guild {guild_id}, making pick...")
+                        await self.handle_bot_pick(draft)
+                    else:
+                        # Notify current player
+                        current_player = draft.get_current_player()
+                        print(f"Human player's turn in guild {guild_id}, notifying {current_player.name}...")
+                        await draft.draft_channel.send(f"{current_player.mention}, it's your turn to pick!")
+                    
+                    print(f"Successfully loaded draft state for guild {guild_id}, channel {channel_id}")
+                else:
+                    print(f"Failed to load draft state for guild {guild_id}, channel {channel_id}: No draft returned")
+                        
+            except Exception as e:
+                print(f"Error loading draft state for guild {guild_id}, channel {channel_id}: {e}")
+        
+        print("Finished loading saved draft states")
+
+    async def handle_bot_pick(self, draft: RochesterDraft):
+        """Handle bot picks and save state after each pick"""
+        while draft.is_bot_turn():
+            current_bot = draft.get_current_player()
+            current_pack = draft.get_current_pack()
+            if current_pack:
+                picked_card = current_bot.make_pick(current_pack)
+                if picked_card:
+                    await draft.handle_pick(current_bot, picked_card.name)
+                    await draft.draft_channel.send(f"Bot {current_bot.name} picked {picked_card.name}")
+                    await draft.update_pack_display()
+                    
+                    # Save state after each pick
+                    await draft.save_state(draft.draft_channel.guild.id, draft.draft_channel.id)
+            
+            # Break if draft is complete
+            if draft.is_draft_complete():
+                break
+
+    async def on_ready(self):
+        """Called when the bot is ready"""
+        print(f'Logged in as {self.user} (ID: {self.user.id})')
+        print('------')
+        
+        # Load existing V4CB games after bot is ready
+        print("Loading existing V4CB games...")
         await self.load_existing_games()
+        # Load saved draft states
+        print("Loading saved draft states...")
+        await self.load_saved_drafts()
 
     async def load_existing_games(self):
         """Load existing V4CB games from storage"""

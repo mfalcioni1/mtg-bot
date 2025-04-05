@@ -1,5 +1,5 @@
 import aiohttp
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 import re
 import csv
 from io import StringIO
@@ -17,6 +17,41 @@ class CardData:
         self.status = row['status']
         self.tags = row['tags'].split(',') if row['tags'] else []
         self.mtgo_id = row['MTGO ID']
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert CardData to dictionary for serialization"""
+        return {
+            'name': self.name,
+            'cmc': self.cmc,
+            'type': self.type,
+            'color': self.color,
+            'set': self.set,
+            'collector_number': self.collector_number,
+            'rarity': self.rarity,
+            'color_category': self.color_category,
+            'status': self.status,
+            'tags': self.tags,
+            'mtgo_id': self.mtgo_id
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'CardData':
+        """Create CardData from dictionary"""
+        # Create a row-like dictionary
+        row = {
+            'name': data['name'],
+            'CMC': str(data['cmc']),
+            'Type': data['type'],
+            'Color': data['color'],
+            'Set': data['set'],
+            'Collector Number': data['collector_number'],
+            'Rarity': data['rarity'],
+            'Color Category': data['color_category'],
+            'status': data['status'],
+            'tags': ','.join(data['tags']),
+            'MTGO ID': data['mtgo_id']
+        }
+        return cls(row)
 
 class CubeCobraParser:
     def __init__(self):
