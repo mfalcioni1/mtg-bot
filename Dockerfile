@@ -10,12 +10,16 @@ COPY src/requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create directory for credentials and copy them
+COPY auth/ /app/auth/
+
 # Copy source code
 COPY src/ .
 COPY .env .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/auth/credentials.json
 
 # Use tini as init system
 RUN apt-get update && apt-get install -y tini

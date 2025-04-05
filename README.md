@@ -1,21 +1,30 @@
 # 🎲 MTG Draft Bot
 
-A Discord bot for running Magic: The Gathering drafts with support for both human and AI players. Specializing in Rochester Draft format, this bot makes remote drafting with your friends as engaging as sitting around a table!
+A Discord bot for running Magic: The Gathering drafts with support for both human and AI players. Specializing in Rochester Draft format and V4CB game mode, this bot makes remote drafting and playing with your friends as engaging as sitting around a table!
 
 ## ✨ Features
 
 ### Core Functionality
-- 🤖 **AI Players**: Fill empty seats with bot players
-- 📊 **Rochester Draft Format**: See all picks in real-time
-- 🎯 **Cube Support**: Direct integration with Cube Cobra
+- 🤖 **AI Players**: Fill empty seats with bot players using random picking strategy
+- 📊 **Rochester Draft Format**: See all picks in real-time with proper snake draft ordering
+- 🎯 **Cube Support**: Direct integration with Cube Cobra's CSV endpoint
 - 🔄 **Asynchronous Play**: Draft at your own pace
 - 🤝 **Mixed Drafts**: Combine human and bot players seamlessly
+- 🎮 **V4CB Game Mode**: Full support for V4CB games with banned list management and scoring
 
 ### Draft Management
 - 📝 **Easy Signup**: Simple commands to join drafts
-- 🎮 **Intuitive Interface**: Clear pack displays and pick commands
+- 🎮 **Intuitive Interface**: Clear pack displays with pick history
 - 📈 **Real-time Updates**: Track draft progress and player picks
 - 🎨 **Color Distribution**: View cube composition and color balance
+- 🔍 **Card Autocomplete**: Smart card name suggestions when making picks
+
+### V4CB Game Features
+- 📋 **Banned List Management**: Add, remove, and view banned cards with pagination
+- 🎯 **Card Submission**: Submit and validate 4-card combinations
+- 📊 **Score Tracking**: Track and manage player scores
+- 🏆 **Winner Management**: Support for multiple winners per round
+- 💾 **Persistent Storage**: Game state saved and recovered using Google Cloud Storage
 
 ## 🚀 Getting Started
 
@@ -23,6 +32,8 @@ A Discord bot for running Magic: The Gathering drafts with support for both huma
 - Python 3.8+
 - Discord Bot Token
 - Discord Server with admin privileges
+- Google Cloud Project with Storage enabled
+- Google Cloud Service Account credentials
 
 ### Installation
 1. Clone the repository:
@@ -36,7 +47,16 @@ cd mtg-draft-bot
 pip install -r src/requirements.txt
 ```
 
-3. Set up environment variables (see Environment Variables section)
+3. Set up environment variables:
+```env
+# Discord Configuration
+DISCORD_BOT_TOKEN = 'your-discord-bot-token'
+TEST_GUILD_ID = 'your-test-server-id'  # Optional, for development
+
+# Google Cloud Configuration
+GOOGLE_APPLICATION_CREDENTIALS = "/path/to/service-account-key.json"
+GOOGLE_CLOUD_PROJECT = "your-project-id"
+```
 
 4. Run the bot:
 ```bash
@@ -50,31 +70,26 @@ python src/bot.py --test
 
 ## 🎮 Commands
 
-### Draft Setup
+### Draft Commands
 - `/signup` - Join the current draft
 - `/clear_signup` - Clear all signups (Admin only)
-- `/startdraft` - Start a new draft with specified parameters
-
-### Drafting
+- `/start_draft` - Start a new draft with specified parameters
 - `/show_pack` - View the current pack
 - `/pick [card_name]` - Make a pick from the current pack
+- `/view_pool` - View your drafted cards
+- `/quit_draft` - End the current draft (Admin only)
 
-## ⚙️ Environment Variables
-Create a `.env` file in the root directory with:
-
-```env
-# Discord Configuration
-DISCORD_BOT_TOKEN = 'your-discord-bot-token'
-TEST_GUILD_ID = 'your-test-server-id'  # Optional, for development
-
-# Google Cloud Configuration (Future Use)
-GOOGLE_APPLICATION_CREDENTIALS = "/path/to/service-account-key.json"
-GOOGLE_CLOUD_PROJECT = "your-project-id"
-GCS_DATA_BUCKET = 'your-gcs-bucket-name'
-
-# API Configuration
-SCRYFALL_API_URL = 'https://api.scryfall.com/bulk-data'
-```
+### V4CB Commands
+- `/v4cb_start` - Start a new V4CB game
+- `/v4cb_submit` - Submit cards for the current round
+- `/v4cb_banned` - View the banned list
+- `/v4cb_update_banned` - Add cards to the banned list
+- `/v4cb_remove_banned_card` - Remove a card from the banned list
+- `/v4cb_clear_banned` - Clear the entire banned list
+- `/v4cb_reveal` - Reveal all submissions for the current round
+- `/v4cb_submit_winner` - Submit winner(s) for the current round
+- `/v4cb_score` - View current scores
+- `/v4cb_end` - End the current game
 
 ## 🏗️ Project Structure
 ```
@@ -83,6 +98,10 @@ mtg-draft-bot/
 │   ├── bot.py           # Main bot implementation
 │   ├── cube_parser.py   # Cube Cobra integration
 │   ├── draft_bots.py    # AI player implementation
+│   ├── draft.py         # Rochester draft logic
+│   ├── pack_display.py  # Pack display system
+│   ├── v4cb.py         # V4CB game implementation
+│   ├── storage_manager.py # Cloud storage integration
 │   └── requirements.txt # Project dependencies
 ├── llm/
 │   ├── design_doc.md    # Design documentation
@@ -90,47 +109,24 @@ mtg-draft-bot/
 └── README.md
 ```
 
-## 🎯 Draft Flow
-1. Players sign up for draft using `/signup`
-2. Admin starts draft with `/startdraft`
-3. Bot automatically fills empty seats with AI players
-4. Each player (human or bot) takes turns making picks
-5. Packs are passed automatically after each pick
-6. Draft continues until all packs are drafted
-
-## 🤖 Bot Players
-The bot currently supports:
-- Random picking strategy
-- Automatic turn handling
-- Seamless integration with human players
-
-Future bot improvements planned:
-- Color preference awareness
-- Card synergy recognition
-- Draft strategy implementation
-- Learning from human draft patterns
-
 ## 🛠️ Development Status
-Check [status_report.md](llm/status_report.md) for current development status and planned features.
+- ✅ Core draft functionality complete
+- ✅ V4CB game implementation complete
+- ✅ Cloud storage integration complete
+- ✅ Proper deployment infrastructure
+- ✅ Command management system
+- ✅ Pack display system
+- 🚧 Planned improvements for analytics and statistics
+- 🚧 Deck history tracking for V4CB games
 
-## 🔜 Planned Features
-- Scryfall image integration
-- Draft analytics and statistics
-- Custom bot strategies
-- Draft history tracking
-- Deck builder integration
-- Tournament organization tools
-
-## 🤝 Contributing
-Contributions are welcome! Please feel free to submit a Pull Request.
+For detailed development status, see [status_report.md](llm/status_report.md).
 
 ## 📝 License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🙏 Acknowledgments
 - [Cube Cobra](https://cubecobra.com/) for cube management
-- [Scryfall](https://scryfall.com/) for card data (future integration)
-- Discord.py team for the amazing framework
+- [Discord.py](https://discordpy.readthedocs.io/) for the Discord API wrapper
 
 ## 📞 Support
 For support, please open an issue in the GitHub repository or join our Discord server (coming soon).

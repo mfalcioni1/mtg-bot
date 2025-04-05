@@ -53,7 +53,7 @@
 ### 7. V4CB Game Implementation
 - ✅ Added new V4CB game module with dedicated class structure
 - ✅ Implemented card submission system with validation
-- ✅ Created banned list management
+- ✅ Created banned list management with pagination
 - ✅ Added status tracking and display
 - ✅ Implemented private submission confirmation
 - ✅ Added public submission announcements
@@ -63,6 +63,25 @@
 - ✅ Improved banned list management with both update and overwrite options
 - ✅ Enhanced error messages with better formatting and clarity
 - ✅ Added detailed feedback for banned list changes
+- ✅ Added personal deck viewing command
+- ✅ Implemented comprehensive banned list management (clear, remove single card)
+- ✅ Added winner submission and score tracking system
+- ✅ Implemented score display and management commands
+- ✅ Added support for multiple winners per round
+- ✅ Improved round management with reveal-then-winner flow
+- ✅ Added persistent storage using Google Cloud Storage
+- ✅ Implemented game state recovery after bot restarts
+- ✅ Added paginated banned list display with interactive buttons
+- ✅ Improved player name handling using display names consistently
+
+### 8. Cloud Storage Integration
+- ✅ Implemented Google Cloud Storage client
+- ✅ Created storage structure for game data
+- ✅ Added utility functions for reading/writing JSON data
+- ✅ Implemented proper error handling for storage operations
+- ✅ Added automatic file creation for new servers/channels
+- ✅ Implemented game state persistence
+- ✅ Added game recovery system after bot restarts
 
 ## Current Status
 
@@ -95,6 +114,18 @@
 - Public/private messaging system
 - Round-based submission handling
 - Clear error messaging
+- Personal deck viewing
+- Advanced banned list management (clear, remove single card)
+- Score tracking and management
+- Winner submission system
+- Round completion workflow
+- Multiple winner support
+- V4CB game state persistence
+- Automatic game recovery after bot restarts
+- Interactive banned list pagination
+- Consistent player name handling
+- Cloud storage integration
+- Proper error handling for storage operations
 
 ### Known Issues
 1. Player Information
@@ -106,39 +137,33 @@
    - ✅ Corrected pack rotation
    - ✅ Implemented proper snake draft pattern
 3. V4CB Implementation
-   - Could add card validation against a card database
-   - Consider adding game history tracking
-   - Could add round numbering/tracking
-   - Might need player registration system
-   - Could add export functionality for game results
+   - Need to implement deck history tracking
+   - Need to store submitted decks for each round
+   - Need to track winning decks
+   - Could add export functionality for game history
+   - Consider adding round numbering/tracking
+   - Consider adding analytics for game statistics
 
 ## Next Steps
 
-1. Player Information System
-   - ✅ Completed
-   - Add draft progress visualization
-   - Improve pool organization display
-   - Add statistics and analytics
-
-2. Testing and Verification
-   - ✅ Verified Rochester draft logic
-   - Test complete draft flow
-   - Check bot behavior
-   - Validate draft completion
-
-3. Quality of Life Improvements
-   - Add more detailed draft progress indicators
-   - Improve results formatting
-   - Add draft history tracking
-   - Consider adding pack contents export
-
-4. V4CB Improvements
-   - Add card validation against official database
-   - Implement game history tracking
+1. V4CB Game History
+   - Implement deck history tracking
+   - Store submitted decks for each round
+   - Track winning deck combinations
    - Add round numbering system
-   - Implement player registration
-   - Consider adding export functionality for game results
-   - Add game statistics tracking
+   - Consider adding analytics for deck statistics
+
+2. Quality of Life Improvements
+   - Add export functionality for game history
+   - Improve analytics and statistics display
+   - Consider adding deck performance tracking
+   - Add round progress indicators
+
+3. Storage Improvements
+   - Implement backup system for game data
+   - Add data migration tools if needed
+   - Consider adding data compression for large histories
+   - Add storage cleanup for ended games
 
 ## Technical Notes
 
@@ -152,6 +177,11 @@
 - Using container-optimized VM
 - Automated deployment scripts
 - Environment-aware configuration
+- Using Google Cloud Storage for data persistence
+- Implemented proper async/await patterns
+- Added comprehensive error handling
+- Using Discord.py's View system for pagination
+- Improved command response formatting
 
 ## Environment Setup
 
