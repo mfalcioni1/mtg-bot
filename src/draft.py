@@ -295,7 +295,13 @@ class RochesterDraft:
                 }
             })
             
-            logging.info(f"Successfully saved draft state")
+            # Add player name mapping
+            await self.storage.write_json("player_names.json", {
+                str(player.id): player.display_name 
+                for player in self.active_players
+            })
+            
+            logging.info(f"Successfully saved draft state.")
             
         except Exception as e:
             logging.error(f"Error saving draft state: {str(e)}")
@@ -311,13 +317,18 @@ class RochesterDraft:
             current_state = await storage.read_json("current_state.json")
             players = await storage.read_json("players.json")
             content = await storage.read_json("content.json")
+            player_names = await storage.read_json("player_names.json")
             
             logging.info(f"Attempting to load draft for guild {guild_id}, channel {channel_id}")
-            logging.info(f"Found config: {bool(config)}, state: {bool(current_state)}, players: {bool(players)}, content: {bool(content)}")
+            logging.info(f"Found config: {bool(config)}, state: {bool(current_state)}, players: {bool(players)}, content: {bool(content)}, names: {bool(player_names)}")
             
             if not all([config, current_state, players, content]):
                 logging.info("Missing some state components, skipping draft recovery")
                 return None
+
+            # Log player names if available
+            if player_names:
+                logging.info(f"Found player name mappings: {player_names}")
 
             # Get guild object
             guild = client.get_guild(guild_id)

@@ -276,13 +276,14 @@ async def start_draft(interaction: discord.Interaction, cube_url: str = None,
                        f"• {cards_per_pack} cards per pack\n"
                        f"• {num_packs} packs per player\n\n"
                        f"Color Distribution:\n"
-                       f"• White: {sum(1 for c in cards if c.color_category == 'w')}\n"
-                       f"• Blue: {sum(1 for c in cards if c.color_category == 'u')}\n"
-                       f"• Black: {sum(1 for c in cards if c.color_category == 'b')}\n"
-                       f"• Red: {sum(1 for c in cards if c.color_category == 'r')}\n"
-                       f"• Green: {sum(1 for c in cards if c.color_category == 'g')}\n"
-                       f"• Multi: {sum(1 for c in cards if c.color_category == 'm')}\n"
-                       f"• Colorless: {sum(1 for c in cards if c.color_category == 'c')}\n\n"
+                       f"• White: {sum(1 for c in cards if c.color_category == 'White')}\n"
+                       f"• Blue: {sum(1 for c in cards if c.color_category == 'Blue')}\n"
+                       f"• Black: {sum(1 for c in cards if c.color_category == 'Black')}\n"
+                       f"• Red: {sum(1 for c in cards if c.color_category == 'Red')}\n"
+                       f"• Green: {sum(1 for c in cards if c.color_category == 'Green')}\n"
+                       f"• Multi: {sum(1 for c in cards if c.color_category == 'Multicolored')}\n"
+                       f"• Colorless: {sum(1 for c in cards if c.color_category == 'Colorless')}\n\n"
+                       f"• Lands: {sum(1 for c in cards if c.type == 'Lands')}\n\n"
                        f"The first pack will be sent shortly!",
             color=discord.Color.green()
         )
@@ -410,6 +411,7 @@ async def quit_draft(interaction: discord.Interaction):
             await draft.storage.delete_json("current_state.json")
             await draft.storage.delete_json("players.json")
             await draft.storage.delete_json("content.json")
+            await draft.storage.delete_json("player_names.json")  # Add cleanup for player names
         
         # Clear all states
         bot.active_drafts[guild_id] = []
