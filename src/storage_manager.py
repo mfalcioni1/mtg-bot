@@ -1,6 +1,6 @@
 from google.cloud import storage
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, Tuple
 import logging
 
 class StorageManager:
@@ -90,4 +90,49 @@ class StorageManager:
             return True
         except Exception as e:
             logging.error(f"Error ensuring directory exists: {str(e)}")
-            return False 
+            return False
+
+    async def list_active_sessions(self) -> List[Tuple[str, str]]:
+        """List all active sessions in the bucket, returns list of (server_id, channel_id) tuples"""
+        try:
+            # List all blobs with the game_type prefix
+            blobs = self.client.list_blobs(self.bucket_name, prefix=f"{self.game_type}/")
+            
+            # Extract unique server/channel combinations
+            active_sessions = set()
+            for blob in blobs:
+                # Path format is: game_type/server_id/channel_id/filename
+                parts = blob.name.split('/')
+                if len(parts) >= 4:  # Ensure we have all parts
+                    active_sessions.add((parts[1], parts[2]))
+            
+            return list(active_sessions)
+        except Exception as e:
+            logging.error(f"Error listing active sessions: {str(e)}")
+            return []
+
+    @classmethod
+    async def list_all_active_sessions(cls, bucket_name: str = "mtg-discord-bot-data") -> Dict[str, List[Tuple[str, str]]]:
+        """List all active sessions for all game types"""
+        try:
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            
+            # Get all blobs
+            blobs = client.list_blobs(bucket_name)
+            
+            # Organize by game type
+            sessions = {}
+            for blob in blobs:
+                parts = blob.name.split('/')
+                if len(parts) >= 4:  # game_type/server_id/channel_id/filename
+                    game_type = parts[0]
+                    if game_type not in sessions:
+                        sessions[game_type] = set()
+                    sessions[game_type].add((parts[1], parts[2]))
+            
+            # Convert sets to lists
+            return {game_type: list(session_set) for game_type, session_set in sessions.items()}
+        except Exception as e:
+            logging.error(f"Error listing all active sessions: {str(e)}")
+            return {} 

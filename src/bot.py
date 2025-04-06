@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from dotenv import load_dotenv
 import os
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from cube_parser import CubeCobraParser
 import argparse
 from draft_bots import DraftBot
@@ -12,6 +12,7 @@ import asyncio
 import logging
 import signal
 from v4cb import V4CBGame, BannedListPaginator
+from storage_manager import StorageManager
 
 # Add argument parsing
 parser = argparse.ArgumentParser(description='Run the MTG Draft Discord Bot')
@@ -245,16 +246,22 @@ async def start_draft(interaction: discord.Interaction, cube_url: str = None,
             )
             return
         
-        # Create draft session
-        draft = RochesterDraft(cards, num_human_players, cards_per_pack, num_packs, num_bots)
+        # Create draft session with guild and channel IDs
+        draft = RochesterDraft(
+            cards=cards,
+            num_players=total_players,
+            cards_per_pack=cards_per_pack,
+            num_packs=num_packs,
+            num_bots=num_bots,
+            guild_id=interaction.guild_id,
+            channel_id=interaction.channel_id
+        )
         draft.add_bots(num_bots)
+        draft.prepare_packs()
+        draft.initialize_player_pools(bot.active_drafts[guild_id])
         
-        try:
-            draft.prepare_packs()
-            draft.initialize_player_pools(bot.active_drafts[guild_id])
-        except ValueError as e:
-            await interaction.followup.send(str(e), ephemeral=True)
-            return
+        # Save initial state
+        await draft.save_state()
         
         bot.draft_sessions[guild_id] = draft
         
@@ -391,9 +398,18 @@ async def quit_draft(interaction: discord.Interaction):
         return
     
     try:
-        # Clear the pack display
+        # Get the draft
         draft = bot.draft_sessions[guild_id]
+        
+        # Clear the pack display
         await draft.pack_display.clear_display(guild_id)
+        
+        # Clean up storage if it exists
+        if draft.storage:
+            await draft.storage.delete_json("config.json")
+            await draft.storage.delete_json("current_state.json")
+            await draft.storage.delete_json("players.json")
+            await draft.storage.delete_json("content.json")
         
         # Clear all states
         bot.active_drafts[guild_id] = []
@@ -406,7 +422,7 @@ async def quit_draft(interaction: discord.Interaction):
         )
         
     except Exception as e:
-        print(f"Error in quit_draft: {e}")
+        logging.error(f"Error in quit_draft: {e}")
         await interaction.response.send_message(
             "An error occurred while trying to quit the draft. Please try again.",
             ephemeral=True
@@ -1028,29 +1044,118 @@ class DraftBot(commands.Bot):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
         print("------")
         
-        # Load existing games after bot is ready
-        print("Loading existing games...")
-        await self.load_existing_games()
+        # Load existing sessions
+        print("Loading existing sessions...")
+        await self.recover_all_sessions()
 
-    async def load_existing_games(self):
-        """Load existing V4CB games from storage"""
+    async def recover_all_sessions(self):
+        """Recover all active sessions (drafts and v4cb games)"""
         try:
-            # Get list of all guilds the bot is in
-            for guild in self.guilds:
-                # For each guild, check all text channels
-                for channel in guild.text_channels:
-                    # Check if a game exists in storage for this channel
-                    if await V4CBGame.game_exists(str(guild.id), str(channel.id)):
-                        print(f"Game exists in storage for channel {channel.id}")
-                        # Create and load the game
-                        game = V4CBGame(channel.id, guild.id)
-                        await game.load_state()
-                        if game.is_active:  # Only add if game was actually loaded
-                            self.v4cb_games[channel.id] = game
-                            logging.info(f"Loaded existing game in channel {channel.id}")
-        
+            # Get all active sessions
+            active_sessions = await StorageManager.list_all_active_sessions()
+            
+            # Recover drafts
+            if 'draft' in active_sessions:
+                await self.recover_active_drafts(active_sessions['draft'])
+            
+            # Recover V4CB games
+            if 'v4cb' in active_sessions:
+                await self.recover_active_v4cb_games(active_sessions['v4cb'])
+            
         except Exception as e:
-            logging.error(f"Error loading existing games: {str(e)}")
+            logging.error(f"Error recovering sessions: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
+
+    async def recover_active_drafts(self, active_drafts: List[Tuple[str, str]]):
+        """Recover active drafts from storage using pre-filtered session list"""
+        try:
+            logging.info(f"Starting draft recovery process for {len(active_drafts)} potential drafts")
+            
+            for guild_id, channel_id in active_drafts:
+                try:
+                    # Convert IDs to int
+                    guild_id_int = int(guild_id)
+                    channel_id_int = int(channel_id)
+                    
+                    # Get guild and channel objects
+                    guild = self.get_guild(guild_id_int)
+                    if not guild:
+                        logging.warning(f"Could not find guild {guild_id}")
+                        continue
+                        
+                    channel = guild.get_channel(channel_id_int)
+                    if not channel:
+                        logging.warning(f"Could not find channel {channel_id} in guild {guild_id}")
+                        continue
+                    
+                    logging.info(f"Loading draft in guild {guild_id}, channel {channel_id}")
+                    
+                    # Try to load draft state
+                    draft = await RochesterDraft.load_draft(guild_id_int, channel_id_int, self)
+                    
+                    if draft:
+                        logging.info(f"Successfully loaded draft in guild {guild_id}, channel {channel_id}")
+                        
+                        # Restore draft session
+                        self.draft_sessions[guild_id_int] = draft
+                        
+                        # Set draft channel and update display
+                        await draft.set_draft_channel(channel)
+                        await draft.update_pack_display()
+                        
+                        # Handle bot turns or notify current player
+                        if draft.is_bot_turn():
+                            while draft.is_bot_turn() and not draft.is_draft_complete():
+                                current_bot = draft.get_current_player()
+                                current_pack = draft.get_current_pack()
+                                if current_pack:
+                                    bot_pick = current_bot.make_pick(current_pack)
+                                    if bot_pick:
+                                        await draft.handle_pick(current_bot, bot_pick.name)
+                                        await channel.send(f"Bot {current_bot.name} picked {bot_pick.name}")
+                        else:
+                            current_player = draft.get_current_player()
+                            await channel.send(f"{current_player.mention}, it's your turn to pick!")
+                    else:
+                        logging.warning(f"Failed to load draft in channel {channel_id}")
+                        
+                except Exception as e:
+                    logging.error(f"Error recovering draft for guild {guild_id}, channel {channel_id}: {str(e)}")
+                    continue
+                    
+        except Exception as e:
+            logging.error(f"Error in draft recovery process: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
+
+    async def recover_active_v4cb_games(self, active_games: List[Tuple[str, str]]):
+        """Recover V4CB games from storage using pre-filtered session list"""
+        try:
+            logging.info(f"Starting V4CB recovery process for {len(active_games)} potential games")
+            
+            for guild_id, channel_id in active_games:
+                try:
+                    # Convert IDs to int
+                    channel_id_int = int(channel_id)
+                    guild_id_int = int(guild_id)
+                    
+                    # Create and load the game
+                    game = V4CBGame(channel_id_int, guild_id_int)
+                    await game.load_state()
+                    
+                    if game.is_active:
+                        self.v4cb_games[channel_id_int] = game
+                        logging.info(f"Loaded existing V4CB game in channel {channel_id}")
+                        
+                except Exception as e:
+                    logging.error(f"Error recovering V4CB game for guild {guild_id}, channel {channel_id}: {str(e)}")
+                    continue
+                
+        except Exception as e:
+            logging.error(f"Error in V4CB recovery process: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
 
 # Initialize bot with test mode flag
 bot = DraftBot(test_mode=args.test)

@@ -1,5 +1,5 @@
 import random
-from typing import List, Optional
+from typing import List, Optional, Dict
 from cube_parser import CardData
 
 class DraftBot:
@@ -12,6 +12,16 @@ class DraftBot:
     def make_pick(self, pack: List[CardData]) -> Optional[CardData]:
         """Make a pick from the current pack"""
         raise NotImplementedError("Base DraftBot cannot make picks")
+
+    def to_dict(self) -> Dict:
+        return {
+            "name": self.name,
+            "type": self.__class__.__name__
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'DraftBot':
+        return create_bot(name=data["name"])
 
 class RandomBot(DraftBot):
     """Bot that makes completely random picks"""
