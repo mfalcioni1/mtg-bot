@@ -13,14 +13,15 @@ class V4CBGame:
         self.is_active = False
         self.scores: Dict[str, int] = {}
         self.current_round_revealed = False
-        self.storage = StorageManager()
+        self.storage = StorageManager("v4cb", self.server_id, self.channel_id)
         
     @staticmethod
-    async def game_exists(storage: StorageManager, server_id: str, channel_id: str) -> bool:
+    async def game_exists(server_id: str, channel_id: str) -> bool:
         """Check if a game exists in storage for this channel"""
         try:
-            banned_data = await storage.read_json(server_id, channel_id, "banned_list.json")
-            scores_data = await storage.read_json(server_id, channel_id, "scores.json")
+            storage_instance = StorageManager("v4cb", server_id, channel_id)
+            banned_data = await storage_instance.read_json("banned_list.json")
+            scores_data = await storage_instance.read_json("scores.json")
             return banned_data is not None or scores_data is not None
         except Exception as e:
             logging.error(f"Error checking game existence: {str(e)}")
@@ -30,13 +31,13 @@ class V4CBGame:
         """Load game state from storage"""
         try:
             # Load banned list
-            banned_data = await self.storage.read_json(self.server_id, self.channel_id, "banned_list.json")
+            banned_data = await self.storage.read_json("banned_list.json")
             if banned_data:
                 self.banned_cards = set(banned_data.get("cards", []))
                 self.is_active = True  # If we have data, the game is active
             
             # Load scores
-            scores_data = await self.storage.read_json(self.server_id, self.channel_id, "scores.json")
+            scores_data = await self.storage.read_json("scores.json")
             if scores_data:
                 self.scores = scores_data.get("scores", {})
                 
@@ -48,16 +49,12 @@ class V4CBGame:
         try:
             # Save banned list
             await self.storage.write_json(
-                self.server_id,
-                self.channel_id,
                 "banned_list.json",
                 {"cards": list(self.banned_cards)}
             )
             
             # Save scores
             await self.storage.write_json(
-                self.server_id,
-                self.channel_id,
                 "scores.json",
                 {"scores": self.scores}
             )

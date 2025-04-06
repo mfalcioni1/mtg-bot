@@ -12,7 +12,6 @@ import asyncio
 import logging
 import signal
 from v4cb import V4CBGame, BannedListPaginator
-from storage_manager import StorageManager
 
 # Add argument parsing
 parser = argparse.ArgumentParser(description='Run the MTG Draft Discord Bot')
@@ -984,7 +983,6 @@ class DraftBot(commands.Bot):
         self.cube_parser = CubeCobraParser()
         self.test_mode = test_mode
         self.v4cb_games: Dict[int, V4CBGame] = {}
-        self.storage = StorageManager()
         
     async def setup_hook(self):
         """This is called when the bot is done preparing data"""
@@ -1042,7 +1040,7 @@ class DraftBot(commands.Bot):
                 # For each guild, check all text channels
                 for channel in guild.text_channels:
                     # Check if a game exists in storage for this channel
-                    if await V4CBGame.game_exists(self.storage, str(guild.id), str(channel.id)):
+                    if await V4CBGame.game_exists(str(guild.id), str(channel.id)):
                         print(f"Game exists in storage for channel {channel.id}")
                         # Create and load the game
                         game = V4CBGame(channel.id, guild.id)
