@@ -7,6 +7,7 @@ from cube_parser import CardData
 class PackState:
     available_cards: List[CardData]
     picked_cards: Dict[str, List[CardData]]  # player_name -> list of cards picked from this pack
+    pick_order: List[tuple[str, CardData]]  # List of (player_name, card) tuples in order of picks
     pack_number: int
     pack_opener: str  # Name of player who opened this pack
     current_player: str
@@ -42,13 +43,11 @@ class PackDisplay:
         )
 
         # Show all picks for this pack in order
-        if pack_state.picked_cards:
-            all_picks = []
-            for player, cards in pack_state.picked_cards.items():
-                for card in cards:
-                    all_picks.append(f"{player}: {card.name}")
-            
-            picks_text = "\n".join(all_picks)
+        if pack_state.pick_order:
+            picks_text = "\n".join([
+                f"{player}: {card.name}"
+                for player, card in pack_state.pick_order
+            ])
             embed.add_field(
                 name="Picks This Pack (In Order)",
                 value=picks_text,

@@ -31,6 +31,7 @@ class RochesterDraft:
         self.bots: List[DraftBot] = []
         self.pack_display = PackDisplay()
         self.picked_cards: Dict[str, List[CardData]] = {}
+        self.pick_order: List[tuple[str, CardData]] = []  # Track picks in order
         self.draft_channel: Optional[discord.TextChannel] = None
         self.active_players: List[discord.Member] = []
         
@@ -120,8 +121,9 @@ class RochesterDraft:
     
     def move_to_next_pack(self):
         """Move to the next pack in the draft"""
-        # Clear the picked cards before moving to next pack
+        # Clear the picked cards and pick order before moving to next pack
         self.picked_cards = {}
+        self.pick_order = []
         
         self.state.current_pack_index = (self.state.current_pack_index + 1) % self.num_players
         
@@ -153,6 +155,9 @@ class RochesterDraft:
         if player_name not in self.picked_cards:
             self.picked_cards[player_name] = []
         self.picked_cards[player_name].append(picked_card)
+        
+        # Add to pick order
+        self.pick_order.append((player_name, picked_card))
         
         # Update the display before advancing the draft state
         await self.update_pack_display()
@@ -215,6 +220,7 @@ class RochesterDraft:
         pack_state = PackState(
             available_cards=current_pack,
             picked_cards=self.picked_cards,
+            pick_order=self.pick_order,
             pack_number=unique_pack_id,  # Use unique pack ID here
             pack_opener=pack_opener,
             current_player=player_name,

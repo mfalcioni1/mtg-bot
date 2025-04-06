@@ -282,8 +282,8 @@ async def start_draft(interaction: discord.Interaction, cube_url: str = None,
                        f"• Red: {sum(1 for c in cards if c.color_category == 'Red')}\n"
                        f"• Green: {sum(1 for c in cards if c.color_category == 'Green')}\n"
                        f"• Multi: {sum(1 for c in cards if c.color_category == 'Multicolored')}\n"
-                       f"• Colorless: {sum(1 for c in cards if c.color_category == 'Colorless')}\n\n"
-                       f"• Lands: {sum(1 for c in cards if c.type == 'Lands')}\n\n"
+                       f"• Colorless: {sum(1 for c in cards if c.color_category == 'Colorless')}\n"
+                       f"• Lands: {sum(1 for c in cards if c.color_category == 'Lands')}\n\n"
                        f"The first pack will be sent shortly!",
             color=discord.Color.green()
         )

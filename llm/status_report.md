@@ -44,6 +44,10 @@
 - ✅ Improved pack information display with opener and pack numbers
 - ✅ Fixed message management to maintain pack history
 - ✅ Added proper cleanup of display messages
+- ✅ Implemented chronological pick order tracking
+- ✅ Fixed pick display to show picks in exact order they were made
+- ✅ Added pick order persistence between pack updates
+- ✅ Improved pick history display with proper sequencing
 
 ### 6. Command Structure
 - ✅ Fixed command registration order issues
