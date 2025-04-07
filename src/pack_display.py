@@ -11,7 +11,9 @@ class PackState:
     pack_number: int
     pack_opener: str  # Name of player who opened this pack
     current_player: str
+    pack_direction: str  # 'forward' or 'reverse'
     player_pack_number: int  # Which pack number this is for the opener (1-3 typically)
+    player_order: List[str]  # Add new field for complete player order
 
 class PackDisplay:
     def __init__(self):
@@ -26,9 +28,24 @@ class PackDisplay:
         """Create or update the pack display message"""
         # Create title showing overall pack number and which pack this is for the opener
         embed = discord.Embed(
-            title=f"Pack {pack_state.pack_number} (Pack {pack_state.player_pack_number} for {pack_state.pack_opener})",
+            title=f"Pack {pack_state.pack_number}",
             description=f"Current player: {pack_state.current_player}",
             color=discord.Color.blue()
+        )
+
+        # Add player order display with current player highlighted
+        player_order_text = []
+        for player_name in pack_state.player_order:
+            if player_name == pack_state.current_player:
+                player_order_text.append(f"** {player_name} **")
+            else:
+                player_order_text.append(player_name)
+        
+        arrow = " → " if pack_state.pack_direction == "forward" else " ← "
+        embed.add_field(
+            name="Player Order",
+            value=f"{arrow}".join(player_order_text),
+            inline=False
         )
 
         # Available cards section

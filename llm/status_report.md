@@ -99,6 +99,14 @@
 - ✅ Added validation for state recovery
 - ✅ Implemented proper cleanup on draft termination
 
+### 10. Draft Order Display Improvements
+- ✅ Implemented true random seating order that persists between bot restarts
+- ✅ Added visual player order display to pack messages
+- ✅ Implemented directional arrows showing draft direction (forward/reverse)
+- ✅ Added current player highlighting in the order display
+- ✅ Fixed player order to properly maintain randomization between humans and bots
+- ✅ Improved state saving and loading to preserve exact player order
+
 ## Current Status
 
 ### Working Features

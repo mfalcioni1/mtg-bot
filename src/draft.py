@@ -15,7 +15,6 @@ class DraftState:
     current_pack_number: int  # Which pack we're on (1-based)
     current_pack_index: int   # Which player's pack we're drafting (0-based)
     current_pick: int        # Which pick we're on in the current pack (1-based)
-    direction: int           # 1 for clockwise, -1 for counterclockwise
     current_player: int      # Index of current player (0-based)
 
 class RochesterDraft:
@@ -34,13 +33,13 @@ class RochesterDraft:
         self.pick_order: List[tuple[str, CardData]] = []  # Track picks in order
         self.draft_channel: Optional[discord.TextChannel] = None
         self.active_players: List[discord.Member] = []
+        self.player_order: List[Union[discord.Member, DraftBot]] = []
         
         # Rochester-specific state
         self.state = DraftState(
             current_pack_number=1,
             current_pack_index=0,
             current_pick=1,
-            direction=1,
             current_player=0
         )
         
@@ -54,21 +53,19 @@ class RochesterDraft:
     
     def initialize_player_pools(self, players: List[discord.Member]):
         """Initialize empty card pools for all players and bots"""
-        # First store the players temporarily
-        self.active_players = players
         
         # Create combined list of all players (human and bots)
         all_players = players + self.bots
         
-        # Randomize the complete player order
-        randomized_players = random.sample(all_players, len(all_players))
+        # Randomize the complete player order and store it
+        self.player_order = random.sample(all_players, len(all_players))
         
-        # Update active_players and player_pools based on the randomized order
-        self.active_players = [p for p in randomized_players if isinstance(p, discord.Member)]
-        self.bots = [p for p in randomized_players if isinstance(p, DraftBot)]
+        # Store references to players and bots separately for convenience
+        self.active_players = [p for p in self.player_order if isinstance(p, discord.Member)]
+        self.bots = [p for p in self.player_order if isinstance(p, DraftBot)]
         
-        # Initialize pools in randomized order
-        self.player_pools = {player: [] for player in randomized_players}
+        # Initialize pools using the randomized order
+        self.player_pools = {player: [] for player in self.player_order}
     
     def prepare_packs(self):
         """Create packs for the draft"""
@@ -92,8 +89,7 @@ class RochesterDraft:
     
     def get_current_player(self) -> Union[discord.Member, DraftBot]:
         """Get the current player or bot"""
-        all_players = self.active_players + self.bots
-        return all_players[self.state.current_player % len(all_players)]
+        return self.player_order[self.state.current_player % len(self.player_order)]
     
     def is_bot_turn(self) -> bool:
         """Check if it's currently a bot's turn"""
@@ -204,6 +200,11 @@ class RochesterDraft:
         current_player = self.get_current_player()
         player_name = current_player.name if isinstance(current_player, DraftBot) else current_player.display_name
         
+        # Determine pack direction based on pick number
+        # First half of pack goes forward, second half goes backward
+        is_forward = self.state.current_pick <= self.cards_per_pack // 2
+        pack_direction = "forward" if is_forward else "reverse"
+
         # Get pack opener
         pack_opener = self.active_players[self.state.current_pack_index].display_name \
             if self.state.current_pack_index < self.num_human_players \
@@ -214,24 +215,32 @@ class RochesterDraft:
         if player_pack_number == 0:
             player_pack_number = self.num_players
 
-        # Calculate unique pack ID based on both pack number and pack index
+        # Get player order names
+        player_order_names = [
+            p.name if isinstance(p, DraftBot) else p.display_name 
+            for p in self.player_order
+        ]
+
+        # Calculate unique pack ID
         unique_pack_id = (self.state.current_pack_number - 1) * self.num_players + self.state.current_pack_index + 1
 
         pack_state = PackState(
             available_cards=current_pack,
             picked_cards=self.picked_cards,
             pick_order=self.pick_order,
-            pack_number=unique_pack_id,  # Use unique pack ID here
+            pack_number=unique_pack_id,
             pack_opener=pack_opener,
             current_player=player_name,
-            player_pack_number=player_pack_number
+            player_pack_number=player_pack_number,
+            player_order=player_order_names,
+            pack_direction=pack_direction
         )
 
         await self.pack_display.create_or_update_pack_display(
             self.draft_channel,
             pack_state,
             self.draft_channel.guild.id
-        ) 
+        )
     
     def is_draft_complete(self) -> bool:
         """Check if the draft is complete"""
@@ -273,7 +282,6 @@ class RochesterDraft:
                 "current_pack_number": self.state.current_pack_number,
                 "current_pack_index": self.state.current_pack_index,
                 "current_pick": self.state.current_pick,
-                "direction": self.state.direction,
                 "current_player": self.state.current_player,
                 # Add picked cards for current pack
                 "picked_cards": {
@@ -286,8 +294,10 @@ class RochesterDraft:
             await self.storage.write_json("players.json", {
                 "active_players": [str(p.id) for p in self.active_players],
                 "bot_players": [b.to_dict() for b in self.bots],
-                "player_order": [str(p.id) if isinstance(p, discord.Member) else p.name 
-                               for p in self.active_players + self.bots]
+                "player_order": [
+                    str(p.id) if isinstance(p, discord.Member) else p.name 
+                    for p in self.player_order
+                ]
             })
             
             # Save draft content with all necessary data
@@ -367,23 +377,34 @@ class RochesterDraft:
                     for player_name, cards in current_state['picked_cards'].items()
                 }
             
-            # Restore players using guild.fetch_member
-            draft.active_players = []
-            for player_id in players["active_players"]:
-                try:
-                    member = await guild.fetch_member(int(player_id))
-                    if member:
-                        draft.active_players.append(member)
-                        logging.info(f"Restored player {member.display_name}")
-                    else:
-                        logging.error(f"Could not find member {player_id} in guild {guild_id}")
-                except discord.NotFound:
-                    logging.error(f"Member {player_id} not found in guild {guild_id}")
-                except Exception as e:
-                    logging.error(f"Error fetching member {player_id}: {e}")
-            
-            # Restore bots
+            # First restore bots from the saved data
             draft.bots = [DraftBot.from_dict(b) for b in players["bot_players"]]
+
+            # Restore player order using the saved order
+            draft.player_order = []
+            for player_id in players["player_order"]:
+                if player_id.isdigit():
+                    try:
+                        member = await guild.fetch_member(int(player_id))
+                        if member:
+                            draft.player_order.append(member)
+                        else:
+                            logging.error(f"Could not find member {player_id} in guild {guild_id}")
+                    except Exception as e:
+                        logging.error(f"Error fetching member {player_id}: {e}")
+                else:
+                    bot = next((b for b in draft.bots if b.name == player_id), None)
+                    if bot:
+                        draft.player_order.append(bot)
+
+            # Validate player order restoration
+            if len(draft.player_order) != config["num_players"]:
+                logging.error(f"Failed to restore complete player order. Expected {config['num_players']}, got {len(draft.player_order)}")
+                return None
+
+            # Derive active_players and bots from the restored player_order
+            draft.active_players = [p for p in draft.player_order if isinstance(p, discord.Member)]
+            draft.bots = [p for p in draft.player_order if isinstance(p, DraftBot)]
             
             # Restore draft content
             draft.packs = [[CardData.from_dict(c) for c in pack] for pack in content["packs"]]
