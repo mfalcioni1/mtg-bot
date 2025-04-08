@@ -987,6 +987,53 @@ async def v4cb_banned(interaction: discord.Interaction):
     # Store the message for the view's timeout handler
     view.message = await interaction.response.send_message(embed=embeds[0], view=view)
 
+@app_commands.command(name="v4cb_check_banned", description="Check if specific cards are on the banned list")
+@app_commands.describe(cards="Comma-separated list of cards to check")
+async def v4cb_check_banned(interaction: discord.Interaction, cards: str):
+    """Check if specified cards are on the banned list"""
+    channel_id = interaction.channel_id
+    
+    if channel_id not in bot.v4cb_games or not bot.v4cb_games[channel_id].is_active:
+        await interaction.response.send_message(
+            "There's no active V4CB game in this channel!",
+            ephemeral=True
+        )
+        return
+    
+    game = bot.v4cb_games[channel_id]
+    card_list = [card.strip().lower() for card in cards.split(',')]
+    
+    # Check each card against the banned list
+    banned = []
+    not_banned = []
+    for card in card_list:
+        if card in game.banned_cards:
+            banned.append(card)
+        else:
+            not_banned.append(card)
+    
+    # Create response embed
+    embed = discord.Embed(
+        title="Banned Card Check Results",
+        color=discord.Color.blue()
+    )
+    
+    if banned:
+        embed.add_field(
+            name="🚫 Banned Cards",
+            value="\n".join(f"• {card}" for card in banned),
+            inline=False
+        )
+    
+    if not_banned:
+        embed.add_field(
+            name="✅ Not Banned Cards",
+            value="\n".join(f"• {card}" for card in not_banned),
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 def handle_sigterm(*args):
     """Handle termination signal"""
     logging.info("Received termination signal")
@@ -1028,6 +1075,7 @@ class DraftBot(commands.Bot):
         self.tree.add_command(v4cb_score)
         self.tree.add_command(v4cb_overwrite_score)
         self.tree.add_command(v4cb_banned)
+        self.tree.add_command(v4cb_check_banned)
         
         # Sync commands based on mode
         try:

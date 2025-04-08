@@ -78,6 +78,7 @@
 - ✅ Implemented game state recovery after bot restarts
 - ✅ Added paginated banned list display with interactive buttons
 - ✅ Improved player name handling using display names consistently
+- ✅ Added card checking command to verify banned status of specific cards
 
 ### 8. Cloud Storage Integration
 - ✅ Implemented Google Cloud Storage client
@@ -151,6 +152,7 @@
 - Consistent player name handling
 - Cloud storage integration
 - Proper error handling for storage operations
+- Card banned status checking with formatted results
 
 ### Known Issues
 1. Player Information
