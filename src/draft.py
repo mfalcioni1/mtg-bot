@@ -313,8 +313,12 @@ class RochesterDraft:
             
             # Add player name mapping
             await self.storage.write_json("player_names.json", {
-                str(player.id): player.display_name 
-                for player in self.active_players
+                **{"player_names": {
+                    str(player.id): player.display_name 
+                    for player in self.active_players
+                }},
+                **{"channel_id": str(self.draft_channel.id),
+                "channel_name": self.draft_channel.name}
             })
             
             logging.info(f"Successfully saved draft state.")
@@ -344,8 +348,7 @@ class RochesterDraft:
 
             # Log player names if available
             if player_names:
-                logging.info(f"Found player name mappings: {player_names}")
-
+                logging.info(f"Player names: {player_names['player_names']}")
             # Get guild object
             guild = client.get_guild(guild_id)
             if not guild:

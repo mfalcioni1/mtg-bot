@@ -1053,6 +1053,9 @@ class DraftBot(commands.Bot):
         """This is called when the bot is done preparing data"""
         print(f"Running in {'TEST' if self.test_mode else 'PRODUCTION'} mode")
         
+        # Clear existing commands first
+        self.tree.clear_commands(guild=None)
+        
         # Register commands
         self.tree.add_command(signup)
         self.tree.add_command(clear_signup)
@@ -1081,6 +1084,7 @@ class DraftBot(commands.Bot):
         try:
             if self.test_mode and os.getenv('TEST_GUILD_ID'):
                 test_guild = discord.Object(id=int(os.getenv('TEST_GUILD_ID')))
+                self.tree.clear_commands(guild=test_guild)  # Clear guild-specific commands
                 self.tree.copy_global_to(guild=test_guild)
                 await self.tree.sync(guild=test_guild)
                 print(f"Test guild commands synced!")

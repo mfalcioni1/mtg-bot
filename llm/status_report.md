@@ -108,6 +108,18 @@
 - ✅ Fixed player order to properly maintain randomization between humans and bots
 - ✅ Improved state saving and loading to preserve exact player order
 
+### 11. Google Sheets Integration
+- ✅ Created cloud function for draft data export
+- ✅ Implemented automatic spreadsheet updates on draft changes
+- ✅ Added draft picks sheet with player columns
+- ✅ Added cube cards sheet with card status tracking
+- ✅ Implemented proper service account authentication
+- ✅ Added automatic sheet creation and updates
+- ✅ Created test framework for local development
+- ✅ Added proper error handling for sheet operations
+- ✅ Implemented player name resolution from IDs
+- ✅ Added cloud storage trigger for content.json updates
+
 ## Current Status
 
 ### Working Features
@@ -153,6 +165,12 @@
 - Cloud storage integration
 - Proper error handling for storage operations
 - Card banned status checking with formatted results
+- Google Sheets integration for draft data
+- Automatic draft data export
+- Real-time spreadsheet updates
+- Draft pick tracking in spreadsheet
+- Cube card status tracking
+- Player name resolution in exports
 
 ### Known Issues
 1. Player Information
@@ -209,6 +227,10 @@
 - Added comprehensive error handling
 - Using Discord.py's View system for pagination
 - Improved command response formatting
+- Using Google Cloud Functions for spreadsheet updates
+- Integrated with Google Sheets API
+- Using service account authentication
+- Cloud Storage event triggers
 
 ## Environment Setup
 
